@@ -1,14 +1,14 @@
 # ===============================================
 # FILE: eeg_device.py
 # EEG Device Interface with g.Nautilus Support
+# NO MOCK DEVICE - Real hardware only
 # ===============================================
 
 import time
 import threading
-import random
 import logging
 import sys
-from typing import Callable, Optional, List
+from typing import Callable, Optional
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -158,8 +158,6 @@ class GNautilusDevice(EEGDevice):
         """Configure device settings."""
         try:
             # Set device configuration
-            # Example configurations (adjust as needed):
-            
             # Enable all channels
             channel_config = [True] * self.channel_count
             self.device.SetConfiguration(channel_config)
@@ -285,12 +283,11 @@ class GNautilusDevice(EEGDevice):
                         break
                     
                     # Extract channel data
-                    # g.Nautilus returns data in Scans format
                     channels = list(scan.Channels[:self.channel_count])
                     
                     # Create sample dictionary
                     sample = {
-                        "t": time.time(),  # Use current timestamp
+                        "t": time.time(),
                         "channels": channels
                     }
                     
@@ -320,131 +317,3 @@ class GNautilusDevice(EEGDevice):
                 time.sleep(0.01)
         
         logger.info(f"Stream worker stopped after {sample_count} samples")
-
-
-class MockEEGDevice(EEGDevice):
-    """
-    Mock EEG device for development and testing.
-    Generates synthetic 32-channel EEG data.
-    """
-    
-    def __init__(self, sampling_rate: int = 256, channel_count: int = 32):
-        """Initialize mock EEG device."""
-        self.sampling_rate = sampling_rate
-        self.channel_count = channel_count
-        self.is_streaming = False
-        self.stream_thread: Optional[threading.Thread] = None
-        self.callback: Optional[Callable] = None
-        self._stop_event = threading.Event()
-        self._connected = False
-        
-        logger.info(f"Mock EEG Device initialized ({channel_count} ch @ {sampling_rate} Hz)")
-    
-    def connect(self) -> bool:
-        """Simulate connection."""
-        logger.info("Connecting to Mock EEG device...")
-        time.sleep(0.5)
-        self._connected = True
-        logger.info("✓ Mock EEG device connected")
-        return True
-    
-    def disconnect(self) -> None:
-        """Disconnect mock device."""
-        if self.is_streaming:
-            self.stop_stream()
-        self._connected = False
-        logger.info("✓ Mock EEG device disconnected")
-    
-    def is_connected(self) -> bool:
-        """Check connection."""
-        return self._connected
-    
-    def get_sampling_rate(self) -> int:
-        """Get sampling rate."""
-        return self.sampling_rate
-    
-    def get_channel_count(self) -> int:
-        """Get channel count."""
-        return self.channel_count
-    
-    def start_stream(self, callback: Callable) -> bool:
-        """Start mock streaming."""
-        if not self._connected:
-            logger.error("✗ Device not connected")
-            return False
-        
-        if self.is_streaming:
-            return False
-        
-        self.callback = callback
-        self.is_streaming = True
-        self._stop_event.clear()
-        
-        self.stream_thread = threading.Thread(
-            target=self._stream_worker,
-            daemon=True,
-            name="Mock-EEG-Stream"
-        )
-        self.stream_thread.start()
-        
-        logger.info("✓ Mock streaming started")
-        return True
-    
-    def stop_stream(self) -> None:
-        """Stop mock streaming."""
-        if not self.is_streaming:
-            return
-        
-        self.is_streaming = False
-        self._stop_event.set()
-        
-        if self.stream_thread and self.stream_thread.is_alive():
-            self.stream_thread.join(timeout=2.0)
-        
-        logger.info("✓ Mock streaming stopped")
-    
-    def _stream_worker(self) -> None:
-        """Generate mock EEG data."""
-        import math
-        
-        sample_interval = 1.0 / self.sampling_rate
-        baseline_amps = [random.uniform(10, 50) for _ in range(self.channel_count)]
-        frequencies = [random.uniform(8, 12) for _ in range(self.channel_count)]
-        
-        sample_count = 0
-        
-        while self.is_streaming and not self._stop_event.is_set():
-            start_time = time.time()
-            
-            # Generate realistic EEG signals
-            channels = []
-            current_time = time.time()
-            
-            for i in range(self.channel_count):
-                # Alpha wave + noise
-                alpha = baseline_amps[i] * random.uniform(0.8, 1.2) * \
-                       (0.5 + 0.5 * math.sin(2 * math.pi * frequencies[i] * current_time))
-                noise = random.gauss(0, 5)
-                signal = alpha + noise
-                channels.append(round(signal, 2))
-            
-            sample = {
-                "t": current_time,
-                "channels": channels
-            }
-            
-            if self.callback:
-                try:
-                    self.callback(sample)
-                except Exception as e:
-                    logger.error(f"Callback error: {e}")
-            
-            sample_count += 1
-            
-            # Maintain timing
-            elapsed = time.time() - start_time
-            sleep_time = max(0, sample_interval - elapsed)
-            if sleep_time > 0:
-                self._stop_event.wait(sleep_time)
-        
-        logger.info(f"Mock worker stopped after {sample_count} samples")

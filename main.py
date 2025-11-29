@@ -1,6 +1,7 @@
 # ===============================================
 # FILE: main.py
 # BCI Interface Application - Main Entry Point
+# Fixed: Dark mode now applies to entire window
 # ===============================================
 
 import tkinter as tk
@@ -10,16 +11,18 @@ from controller import BCIController
 
 
 class BCIApplication:
-    """Main application class with EEG support and improved theming."""
+    """Main application class with proper dark mode support."""
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("BCI Interface - Login")
         self.root.geometry(f"{600}x{300}")
         self.root.minsize(500, 300)
-        self.root.configure(bg=get_color('bg'))
 
         self.current_theme_name = THEME_LIGHT
+        
+        # Apply initial theme to root
+        self.root.configure(bg=get_color('bg'))
 
         # Show username overlay
         overlay = self._create_username_overlay()
@@ -33,7 +36,6 @@ class BCIApplication:
         self.root.title(f"BCI Interface - {self.username}")
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + CONTROL_PANEL_HEIGHT}")
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
-        self.root.configure(bg=get_color('bg'))
 
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
@@ -159,18 +161,18 @@ class BCIApplication:
 
     # ==================== UI Creation ====================
     def _create_control_panel(self):
-        """Create control panel with dynamic dropdowns for EEG."""
-        panel = tk.Frame(
+        """Create control panel with dynamic dropdowns."""
+        self.panel = tk.Frame(
             self.root,
             bg=get_color('control_bg'),
             height=CONTROL_PANEL_HEIGHT
         )
-        panel.grid(row=0, column=0, sticky="ew")
-        panel.grid_propagate(False)
+        self.panel.grid(row=0, column=0, sticky="ew")
+        self.panel.grid_propagate(False)
 
         self._configure_ttk_style()
 
-        container = tk.Frame(panel, bg=get_color('control_bg'))
+        container = tk.Frame(self.panel, bg=get_color('control_bg'))
         container.pack(side="top", fill="x", padx=CONTROL_PADDING, pady=10)
 
         # Theme buttons
@@ -219,7 +221,7 @@ class BCIApplication:
             self._on_phase_change, width=12
         )
 
-        # Focus time (dynamic)
+        # Focus time
         self.focus_time_label = tk.Label(
             container,
             text="Focus:",
@@ -241,7 +243,7 @@ class BCIApplication:
         self.focus_time_dropdown.pack(side="left", padx=(0, 10))
         self.focus_time_dropdown.bind("<<ComboboxSelected>>", self._on_focus_time_change)
 
-        # Gap time (dynamic)
+        # Gap time
         self.gap_time_label = tk.Label(
             container,
             text="Gap:",
@@ -264,11 +266,26 @@ class BCIApplication:
         self.gap_time_dropdown.bind("<<ComboboxSelected>>", self._on_gap_time_change)
 
         # Calibration rounds
-        self.calibration_rounds_var = self._create_dropdown(
-            container, "Rounds:", str(DEFAULT_CALIBRATION_ROUNDS),
-            [str(r) for r in CALIBRATION_ROUNDS_OPTIONS],
-            self._on_calibration_rounds_change, width=6
+        self.calibration_rounds_label = tk.Label(
+            container,
+            text="Rounds:",
+            bg=get_color('control_bg'),
+            fg=get_color('text_primary'),
+            font=LABEL_FONT
         )
+        self.calibration_rounds_label.pack(side="left", padx=(5, 3))
+
+        self.calibration_rounds_var = tk.StringVar(value=str(DEFAULT_CALIBRATION_ROUNDS))
+        self.calibration_rounds_dropdown = ttk.Combobox(
+            container,
+            textvariable=self.calibration_rounds_var,
+            values=[str(r) for r in CALIBRATION_ROUNDS_OPTIONS],
+            state="readonly",
+            width=6,
+            font=DROPDOWN_FONT
+        )
+        self.calibration_rounds_dropdown.pack(side="left", padx=(0, 10))
+        self.calibration_rounds_dropdown.bind("<<ComboboxSelected>>", self._on_calibration_rounds_change)
 
         sep2 = tk.Frame(container, bg=get_color('text_secondary'), width=2)
         sep2.pack(side="left", fill="y", padx=10)
@@ -324,7 +341,7 @@ class BCIApplication:
         )
 
     def _create_dropdown(self, parent, label_text, default_value, values, callback, width=10):
-        """Helper to create labeled dropdown."""
+        """Helper to create labeled dropdown - stores label reference."""
         label = tk.Label(
             parent,
             text=label_text,
@@ -333,6 +350,11 @@ class BCIApplication:
             font=LABEL_FONT
         )
         label.pack(side="left", padx=(5, 3))
+        
+        # Store label reference for theme updates
+        if not hasattr(self, '_dropdown_labels'):
+            self._dropdown_labels = []
+        self._dropdown_labels.append(label)
 
         var = tk.StringVar(value=default_value)
         dropdown = ttk.Combobox(
@@ -380,35 +402,29 @@ class BCIApplication:
         """Handle input mode change with dynamic dropdown updates."""
         mode = self.input_mode_var.get()
         
-        # Update dropdown options based on input mode
         if mode == INPUT_MODE_EEG:
-            # EEG-specific options
             self.focus_time_dropdown['values'] = [f"{t}s" for t in EEG_FOCUS_TIME_OPTIONS]
             self.focus_time_var.set(f"{EEG_DEFAULT_FOCUS_TIME}s")
             self.gap_time_dropdown['values'] = [f"{t}s" for t in EEG_GAP_TIME_OPTIONS]
             self.gap_time_var.set(f"{EEG_DEFAULT_GAP_TIME}s")
             
-            # Update controller
             try:
                 self.controller.set_focus_time(EEG_DEFAULT_FOCUS_TIME)
                 self.controller.set_gap_time(EEG_DEFAULT_GAP_TIME)
             except:
                 pass
         else:
-            # Mouse/Tobii options
             self.focus_time_dropdown['values'] = [f"{t}s" for t in FOCUS_TIME_OPTIONS]
             self.focus_time_var.set(f"{DEFAULT_FOCUS_TIME}s")
             self.gap_time_dropdown['values'] = [f"{t}s" for t in GAP_TIME_OPTIONS]
             self.gap_time_var.set(f"{DEFAULT_GAP_TIME}s")
             
-            # Update controller
             try:
                 self.controller.set_focus_time(DEFAULT_FOCUS_TIME)
                 self.controller.set_gap_time(DEFAULT_GAP_TIME)
             except:
                 pass
         
-        # Set input mode in controller
         try:
             self.controller.set_input_mode(mode)
         except:
@@ -487,20 +503,38 @@ class BCIApplication:
         self._update_theme_buttons()
 
     def _apply_theme(self, theme):
-        """Apply theme colors to entire application."""
+        """Apply theme colors to entire application - FIXED."""
         global CURRENT_THEME
         CURRENT_THEME = theme
 
-        # Root window
+        # Root window background
+        self.root.config(bg=theme['bg'])
+        
+        # Canvas background
+        self.canvas.config(bg=theme['bg'])
+        
+        # Control panel background
+        self.panel.config(bg=theme['control_bg'])
+
+        # Update all labels in control panel
+        if hasattr(self, '_dropdown_labels'):
+            for label in self._dropdown_labels:
+                try:
+                    label.config(bg=theme['control_bg'], fg=theme['text_primary'])
+                except:
+                    pass
+        
+        # Update specific labels
         try:
-            self.root.config(bg=theme['bg'])
-            self.canvas.config(bg=theme['bg'])
+            self.focus_time_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
+            self.gap_time_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
+            self.calibration_rounds_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
+            self.status_label.config(bg=theme['control_bg'])
         except:
             pass
 
-        # Update all widgets recursively
-        for widget in self.root.winfo_children():
-            self._update_widget_theme(widget, theme)
+        # Update all frames recursively
+        self._update_frame_colors(self.panel, theme)
 
         # Update ttk styles
         self._configure_ttk_style()
@@ -511,38 +545,17 @@ class BCIApplication:
         except:
             pass
 
-    def _update_widget_theme(self, widget, theme):
-        """Recursively update widget colors for theme."""
-        widget_type = widget.winfo_class()
-
+    def _update_frame_colors(self, widget, theme):
+        """Recursively update frame and container colors."""
         try:
-            if widget_type in ('Frame', 'Labelframe'):
+            widget_class = widget.winfo_class()
+            
+            if widget_class in ('Frame', 'Labelframe'):
                 widget.config(bg=theme['control_bg'])
-
-            elif widget_type == 'Label':
-                # Skip theme buttons
-                if widget not in [
-                    getattr(self, 'light_btn', None),
-                    getattr(self, 'dark_btn', None),
-                    getattr(self, 'colorblind_btn', None)
-                ]:
-                    widget.config(bg=theme['control_bg'], fg=theme['text_primary'])
-
-            elif widget_type == 'Button':
-                # Only update non-action buttons
-                if widget == getattr(self, 'start_button', None):
-                    pass  # Keep green/red color
-                elif widget in [self.light_btn, self.dark_btn, self.colorblind_btn]:
-                    pass  # Keep theme button colors
-                else:
-                    widget.config(bg=theme['control_bg'], fg=theme['text_primary'])
-        except:
-            pass
-
-        # Recurse to children
-        try:
+            
+            # Recurse to children
             for child in widget.winfo_children():
-                self._update_widget_theme(child, theme)
+                self._update_frame_colors(child, theme)
         except:
             pass
 

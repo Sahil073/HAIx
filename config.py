@@ -101,6 +101,10 @@ STIMULUS_HOVER_THRESHOLD = 40
 STIMULUS_HOVER_RADIUS = 40
 STIMULUS_SCALE_SPEED = 8.0
 
+# ==================== Tobii Configuration ====================
+TOBII_FOCUS_THRESHOLD = 80  # Pixels - radius to consider "focused on circle"
+TOBII_FOCUS_DURATION = 1.5  # Seconds - how long user must focus before dots move
+
 # ==================== Animation Configuration ====================
 FPS = 60
 FRAME_TIME = int(1000 / FPS)

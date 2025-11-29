@@ -26,7 +26,9 @@ LIGHT_THEME = {
     'dropdown_bg': '#FFFFFF',
     'dropdown_hover': '#F0F4F8',
     'timer_bg': '#FFFFFF',
-    'timer_text': '#2D3142'
+    'timer_text': '#2D3142',
+    'rest_screen_bg': '#F5F7FA',
+    'rest_screen_text': '#2D3142'
 }
 
 # Dark Mode
@@ -44,7 +46,9 @@ DARK_THEME = {
     'dropdown_bg': '#2D3748',
     'dropdown_hover': '#4A5568',
     'timer_bg': '#2D3142',
-    'timer_text': '#E2E8F0'
+    'timer_text': '#E2E8F0',
+    'rest_screen_bg': '#0F1419',
+    'rest_screen_text': '#E2E8F0'
 }
 
 # Colorblind Mode (Deuteranopia-friendly)
@@ -62,7 +66,9 @@ COLORBLIND_THEME = {
     'dropdown_bg': '#FFFFFF',
     'dropdown_hover': '#E0E0E0',
     'timer_bg': '#FFFFFF',
-    'timer_text': '#1A1A1A'
+    'timer_text': '#1A1A1A',
+    'rest_screen_bg': '#E8E8E8',
+    'rest_screen_text': '#1A1A1A'
 }
 
 # Current theme (will be set by application)
@@ -79,33 +85,32 @@ def get_color(key):
     return CURRENT_THEME.get(key, '#FFFFFF')
 
 # ==================== Center Circle Configuration ====================
-CENTER_CIRCLE_RADIUS_RATIO = 0.15  # REDUCED from 0.25 to 0.15 (smaller circle)
-DOT_COUNT = 50  # Number of dots in center circle
+CENTER_CIRCLE_RADIUS_RATIO = 0.15
+DOT_COUNT = 50
 DOT_RADIUS = 3
 DOT_GLOW_RADIUS = 5
 
 # ==================== Stimulus Circle Configuration ====================
 STIMULUS_CIRCLE_COUNT = 8
-STIMULUS_CIRCLE_RADIUS = 30  # Radius of each stimulus circle
-STIMULUS_GLOW_WIDTH = 4  # Border width when glowing
-STIMULUS_NORMAL_WIDTH = 2  # Normal border width
-STIMULUS_DISTANCE_RATIO = 0.45  # Distance from center as ratio
+STIMULUS_CIRCLE_RADIUS = 30
+STIMULUS_GLOW_WIDTH = 4
+STIMULUS_NORMAL_WIDTH = 2
+STIMULUS_DISTANCE_RATIO = 0.45
 
-# --- Hover / animation defaults used by ui_components.py ---
-STIMULUS_HOVER_THRESHOLD = 40     # px - when cursor is considered "hovering" (safe default)
-STIMULUS_HOVER_RADIUS = 40        # px - radius to expand to when hovered
-STIMULUS_SCALE_SPEED = 8.0        # interpolation speed for smooth scaling
+STIMULUS_HOVER_THRESHOLD = 40
+STIMULUS_HOVER_RADIUS = 40
+STIMULUS_SCALE_SPEED = 8.0
 
 # ==================== Animation Configuration ====================
 FPS = 60
-FRAME_TIME = int(1000 / FPS)  # milliseconds
+FRAME_TIME = int(1000 / FPS)
 
-# Dot physics parameters (from original working code)
-DOT_SPRING_STRENGTH = 8.0  # Spring force toward target
-DOT_DAMPING = 0.85  # Velocity damping
-DOT_MAX_SPEED = 300.0  # Maximum speed in pixels/second
-DOT_MOVE_DURATION = 0.3  # seconds - time for dots to reach target
-DOT_RETURN_DURATION = 0.5  # seconds - time for dots to return
+# Dot physics parameters
+DOT_SPRING_STRENGTH = 8.0
+DOT_DAMPING = 0.85
+DOT_MAX_SPEED = 300.0
+DOT_MOVE_DURATION = 0.3
+DOT_RETURN_DURATION = 0.5
 
 # ==================== Phase Configuration ====================
 PHASE_TESTING = "Testing Phase"
@@ -116,18 +121,30 @@ PHASES = [PHASE_TESTING, PHASE_CALIBRATION, PHASE_START]
 # ==================== Input Modes ====================
 INPUT_MODE_MOUSE = "Mouse Cursor"
 INPUT_MODE_TOBII = "Tobii Eye Tracker"
-INPUT_MODES = [INPUT_MODE_MOUSE, INPUT_MODE_TOBII]
+INPUT_MODE_EEG = "EEG Headset"
+INPUT_MODES = [INPUT_MODE_MOUSE, INPUT_MODE_TOBII, INPUT_MODE_EEG]
 
 # ==================== Time Configuration ====================
-FOCUS_TIME_OPTIONS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]  # seconds
+# Mouse/Tobii Configuration
+FOCUS_TIME_OPTIONS = [1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0]
 DEFAULT_FOCUS_TIME = 3.0
-GAP_TIME_OPTIONS = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]  # seconds
+GAP_TIME_OPTIONS = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 DEFAULT_GAP_TIME = 2.0
 
+# EEG Configuration
+EEG_FOCUS_TIME_OPTIONS = [4.0, 8.0, 12.0, 16.0]  # Multiples of 4
+EEG_DEFAULT_FOCUS_TIME = 4.0
+EEG_GAP_TIME_OPTIONS = [2.0, 4.0, 6.0]  # Multiples of 2
+EEG_DEFAULT_GAP_TIME = 2.0
+
 # ==================== Calibration Configuration ====================
-CALIBRATION_ROUNDS_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50]
+CALIBRATION_ROUNDS_OPTIONS = [5, 10, 15, 20, 25, 30, 35, 40, 45, 50, 55]
 DEFAULT_CALIBRATION_ROUNDS = 5
-DOT_MOVE_TRIGGER_RATIO = 0.83  # Dots start moving at 83% of focus time
+DOT_MOVE_TRIGGER_RATIO = 0.83
+
+# ==================== EEG Configuration ====================
+EEG_SAMPLING_RATE = 256  # Hz
+EEG_CHANNEL_COUNT = 32  # 32-channel EEG system
 
 # ==================== Control Panel Configuration ====================
 CONTROL_PANEL_HEIGHT = 60
@@ -145,6 +162,10 @@ TIMER_HEIGHT = 50
 TIMER_PADDING = 15
 TIMER_FONT = ("Consolas", 16, "bold")
 TIMER_LABEL_FONT = ("Segoe UI", 8)
+
+# ==================== Rest Screen Configuration ====================
+REST_SCREEN_FONT = ("Segoe UI", 48, "bold")
+REST_SCREEN_TEXT = "REST"
 
 # ==================== Stimulus Circle Positions ====================
 STIMULUS_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]  # 8 positions (degrees)

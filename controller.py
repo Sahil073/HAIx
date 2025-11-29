@@ -2,8 +2,10 @@ import time
 import math
 import random
 from config import *
-from ui_components import CenterCircle, StimulusCircle, Timer
+from ui_components import CenterCircle, StimulusCircle, Timer, RestScreen
 from calibration_data_handler import CalibrationDataHandler
+from eeg_data_handler import EEGDataHandler
+from eeg_device import MockEEGDevice, GNautilusDevice
 
 # Safe optional tobii handler
 try:
@@ -22,7 +24,12 @@ class BCIController:
         self.status_callback = status_callback
         self.username = username
 
+        # Data handlers
         self.calibration_handler = CalibrationDataHandler(username)
+        self.eeg_handler = None  # Created when EEG mode selected
+        
+        # EEG device
+        self.eeg_device = None
 
         self.width = WINDOW_WIDTH
         self.height = WINDOW_HEIGHT
@@ -31,13 +38,16 @@ class BCIController:
 
         self.center_radius = self._calculate_center_radius()
 
+        # UI Components
         self.center_circle = CenterCircle(canvas, self.center_x, self.center_y, self.center_radius)
         self.stimulus_circles = []
         self._create_stimulus_circles()
-
         self.timer = Timer(canvas)
         self.timer.reposition(self.height)
+        self.rest_screen = RestScreen(canvas)
+        self.rest_screen.reposition(self.width, self.height)
 
+        # Input devices
         self.tobii = TobiiHandler()
         self.input_mode = INPUT_MODE_MOUSE
         self.mouse_x = self.center_x
@@ -45,21 +55,27 @@ class BCIController:
         self.gaze_x = self.center_x
         self.gaze_y = self.center_y
 
+        # Phase and timing
         self.current_phase = PHASE_TESTING
         self.focus_time = DEFAULT_FOCUS_TIME
         self.gap_time = DEFAULT_GAP_TIME
         self.calibration_rounds = DEFAULT_CALIBRATION_ROUNDS
 
+        # Calibration state
         self.calibration_active = False
         self.calibration_sequence = []
         self.current_calibration_index = 0
         self.calibration_start_time = None
         self.calibration_session_start = None
         self.calibration_completed_rounds = 0
-        self.is_in_glow_phase = False
-        self.is_in_gap_phase = False
-
+        
+        # Phase tracking for rest/focus/gap
+        self.is_in_starting_rest = False
+        self.is_in_focus_phase = False
+        self.is_in_ending_rest = False
+        
         self.total_calibrations_done = 0
+        self.circles_completed_in_round = 0
 
         self.last_time = time.time()
         self.running = False
@@ -79,11 +95,13 @@ class BCIController:
                 StimulusCircle(self.canvas, len(self.stimulus_circles)+1, x, y, STIMULUS_CIRCLE_RADIUS)
             )
 
-    # -------------------------------------------------------------
-    # Tracking
-    # -------------------------------------------------------------
+    # ============================================================
+    # Input Mode Management
+    # ============================================================
     def set_input_mode(self, mode):
+        """Switch between Mouse, Tobii, and EEG input modes."""
         self.input_mode = mode
+        
         if mode == INPUT_MODE_TOBII:
             if self.tobii.is_available():
                 self.tobii.start_tracking(self._on_gaze_update)
@@ -91,34 +109,63 @@ class BCIController:
             else:
                 self._update_status("Tobii Not Available", "error")
                 self.input_mode = INPUT_MODE_MOUSE
+                
+        elif mode == INPUT_MODE_EEG:
+            # Initialize EEG components
+            try:
+                if self.eeg_device is None:
+                    # Try real g.Nautilus device first
+                    try:
+                        self.eeg_device = GNautilusDevice(channel_count=EEG_CHANNEL_COUNT)
+                        device_type = "g.Nautilus"
+                    except:
+                        # Fall back to mock device for testing
+                        self.eeg_device = MockEEGDevice(
+                            sampling_rate=EEG_SAMPLING_RATE,
+                            channel_count=EEG_CHANNEL_COUNT
+                        )
+                        device_type = "Mock EEG"
+                
+                # Try to connect to EEG device
+                if self.eeg_device.connect():
+                    if self.eeg_handler is None:
+                        self.eeg_handler = EEGDataHandler(
+                            self.username,
+                            sampling_rate=self.eeg_device.get_sampling_rate(),
+                            channel_count=self.eeg_device.get_channel_count()
+                        )
+                    
+                    self._update_status(f"{device_type} Connected & Ready", "success")
+                else:
+                    self._update_status("EEG Connection Failed", "error")
+                    self.input_mode = INPUT_MODE_MOUSE
+                    self.eeg_device = None
+            except Exception as e:
+                self._update_status(f"EEG Error: {e}", "error")
+                self.input_mode = INPUT_MODE_MOUSE
+                self.eeg_device = None
         else:
+            # Mouse mode
             try:
                 self.tobii.stop_tracking()
+                if self.eeg_device:
+                    self.eeg_device.disconnect()
+                    self.eeg_device = None
             except:
                 pass
             self._update_status("Mouse Active", "info")
 
     def _on_gaze_update(self, norm_x, norm_y, gaze_data):
-        """Callback from Tobii handler with normalized gaze data."""
-
-        # Convert norm coords → screen coords
+        """Callback from Tobii handler."""
         self.gaze_x = int(norm_x * self.width)
         self.gaze_y = int(norm_y * self.height)
 
-        # ------------------------------------------------------------------
-        # LOG ONLY WHEN:
-        # - calibration is active
-        # - we are in glow phase
-        # - we know which circle is glowing
-        # ------------------------------------------------------------------
         if (
             self.calibration_active
-            and self.is_in_glow_phase
+            and self.is_in_focus_phase
             and 0 <= self.current_calibration_index < len(self.calibration_sequence)
         ):
             glowing_circle = self.calibration_sequence[self.current_calibration_index] + 1
-
-            # Extract Tobii data correctly
             safe_data = {
                 "timestamp": gaze_data.get("timestamp"),
                 "avg_x": gaze_data.get("avg_x"),
@@ -126,40 +173,79 @@ class BCIController:
                 "left": gaze_data.get("left"),
                 "right": gaze_data.get("right")
             }
-
             self.calibration_handler.log_gaze_data(safe_data, glowing_circle)
+
+    def _on_eeg_sample(self, sample):
+        """Callback from EEG device for each sample."""
+        if self.eeg_handler and self.calibration_active:
+            self.eeg_handler.add_sample(sample)
 
     def on_mouse_move(self, x, y):
         self.mouse_x = x
         self.mouse_y = y
 
     def get_current_position(self):
-        return (self.gaze_x, self.gaze_y) if self.input_mode == INPUT_MODE_TOBII else (self.mouse_x, self.mouse_y)
+        if self.input_mode == INPUT_MODE_TOBII:
+            return (self.gaze_x, self.gaze_y)
+        else:
+            return (self.mouse_x, self.mouse_y)
 
-    # -------------------------------------------------------------
-    # Phase
-    # -------------------------------------------------------------
+    # ============================================================
+    # Phase and Settings
+    # ============================================================
     def set_phase(self, phase):
         self.stop_calibration()
         self.current_phase = phase
         self._update_status(f"{phase} Active", "info")
 
-    def set_focus_time(self, t): self.focus_time = t
-    def set_gap_time(self, t): self.gap_time = t
-    def set_calibration_rounds(self, r): self.calibration_rounds = r
+    def set_focus_time(self, t):
+        self.focus_time = t
+        if self.eeg_handler:
+            self.eeg_handler.set_timing_parameters(self.gap_time, self.focus_time)
 
-    # -------------------------------------------------------------
-    # Calibration
-    # -------------------------------------------------------------
+    def set_gap_time(self, t):
+        self.gap_time = t
+        if self.eeg_handler:
+            self.eeg_handler.set_timing_parameters(self.gap_time, self.focus_time)
+
+    def set_calibration_rounds(self, r):
+        self.calibration_rounds = r
+
+    # ============================================================
+    # Calibration Control
+    # ============================================================
     def start_calibration(self):
         if self.current_phase != PHASE_CALIBRATION:
             self._update_status("Must switch to Calibration Phase", "error")
             return False
 
-        if not self.calibration_handler.start_session():
-            self._update_status("Cannot Start Session", "error")
-            return False
+        # Initialize appropriate handler
+        if self.input_mode == INPUT_MODE_EEG:
+            if not self.eeg_device or not self.eeg_device.is_connected():
+                self._update_status("EEG not connected - please connect first", "error")
+                return False
+            
+            if not self.eeg_handler:
+                self._update_status("EEG Handler not initialized", "error")
+                return False
+            
+            # Start EEG streaming
+            try:
+                if not self.eeg_device.start_stream(self._on_eeg_sample):
+                    self._update_status("Failed to start EEG streaming", "error")
+                    return False
+            except Exception as e:
+                self._update_status(f"EEG Start Error: {e}", "error")
+                return False
+            
+            self.eeg_handler.set_timing_parameters(self.gap_time, self.focus_time)
+            self.eeg_handler.start_calibration_index(1)
+        else:
+            if not self.calibration_handler.start_session():
+                self._update_status("Cannot Start Session", "error")
+                return False
 
+        # Generate calibration sequence (8 circles per round)
         self.calibration_sequence = []
         for _ in range(self.calibration_rounds):
             seq = list(range(8))
@@ -168,17 +254,29 @@ class BCIController:
 
         self.calibration_active = True
         self.current_calibration_index = 0
-        self.is_in_glow_phase = True
-        self.is_in_gap_phase = False
+        self.circles_completed_in_round = 0
+        self.calibration_completed_rounds = 1  # Start at round 1
+        
+        # Start with initial rest period
+        self.is_in_starting_rest = True
+        self.is_in_focus_phase = False
+        self.is_in_ending_rest = False
+        
         self.calibration_start_time = time.time()
         self.calibration_session_start = time.time()
 
-        first = self.calibration_sequence[0]
-        self._activate_stimulus(first)
-        self.calibration_handler.start_circle_focus(first + 1)
+        # Start collection for first circle
+        first_circle = self.calibration_sequence[0] + 1
+        if self.input_mode == INPUT_MODE_EEG:
+            self.eeg_handler.start_circle_collection(first_circle)
+            self.eeg_handler.set_phase("starting_rest")
+
+        # Show rest screen
+        self.rest_screen.show()
+        self._hide_main_ui()
 
         self.timer.show()
-        self._update_status("Calibration Started", "success")
+        self._update_status(f"Calibration Started: Round 1/{self.calibration_rounds}", "success")
         return True
 
     def stop_calibration(self):
@@ -188,11 +286,17 @@ class BCIController:
         self.calibration_active = False
         self._deactivate_all_stimuli()
         self.center_circle.return_dots_home()
+        self.rest_screen.hide()
+        self._show_main_ui()
         self.timer.hide()
 
+        # Stop devices
         try:
-            self.calibration_handler.end_circle_focus()
-            self.calibration_handler.end_session()
+            if self.input_mode == INPUT_MODE_EEG and self.eeg_device:
+                self.eeg_device.stop_stream()
+            else:
+                self.calibration_handler.end_circle_focus()
+                self.calibration_handler.end_session()
         except:
             pass
 
@@ -206,9 +310,33 @@ class BCIController:
         for c in self.stimulus_circles:
             c.set_glow(False)
 
-    # -------------------------------------------------------------
-    # Animation + Calibration Update
-    # -------------------------------------------------------------
+    def _hide_main_ui(self):
+        """Hide circles during rest periods."""
+        self.center_circle.hide()
+        for circle in self.stimulus_circles:
+            circle.hide()
+
+    def _show_main_ui(self):
+        """Show circles during focus periods."""
+        self.center_circle.show()
+        for circle in self.stimulus_circles:
+            circle.show()
+
+    # ============================================================
+    # Helper: Check if hovering over any stimulus circle
+    # ============================================================
+    def _is_hovering_stimulus_circle(self, x, y):
+        """Check if cursor/gaze is hovering over any stimulus circle."""
+        for circle in self.stimulus_circles:
+            cx, cy = circle.get_position()
+            dist = math.dist((x, y), (cx, cy))
+            if dist <= STIMULUS_HOVER_THRESHOLD:
+                return True, circle
+        return False, None
+
+    # ============================================================
+    # Animation and Calibration Updates
+    # ============================================================
     def start_animation(self):
         self.running = True
         self.last_time = time.time()
@@ -217,13 +345,13 @@ class BCIController:
         self.running = False
 
     def update(self):
-        if not self.running: return
+        if not self.running:
+            return
 
         now = time.time()
         dt = now - self.last_time
         self.last_time = now
 
-        # Calibration active
         if self.calibration_active:
             self._update_calibration(now)
             elapsed = now - self.calibration_session_start
@@ -231,65 +359,146 @@ class BCIController:
 
         elif self.current_phase == PHASE_TESTING:
             x, y = self.get_current_position()
-            if math.dist((x, y), (self.center_x, self.center_y)) > self.center_radius:
-                self.center_circle.move_dots_toward(x, y, 1.0)
+            
+            # FIXED: Only move dots if hovering over a stimulus circle
+            is_hovering, hovered_circle = self._is_hovering_stimulus_circle(x, y)
+            
+            if is_hovering and hovered_circle:
+                # Move dots toward the hovered stimulus circle
+                target_x, target_y = hovered_circle.get_position()
+                self.center_circle.move_dots_toward(target_x, target_y, 1.0)
             else:
+                # Return dots home if not hovering over any circle
                 self.center_circle.return_dots_home()
 
         self.center_circle.update(dt)
-
         for c in self.stimulus_circles:
             c.update_animation(dt)
 
     def _update_calibration(self, now):
+        """Handle calibration state machine with rest-focus-rest cycles."""
         elapsed = now - self.calibration_start_time
-
-        if self.is_in_glow_phase:
+        
+        # Phase 1: Starting Rest
+        if self.is_in_starting_rest:
+            remaining = self.gap_time - elapsed
+            self.timer.update_countdown(remaining, "Rest")
+            
+            if elapsed >= self.gap_time:
+                # Transition to focus phase
+                self.is_in_starting_rest = False
+                self.is_in_focus_phase = True
+                self.calibration_start_time = now
+                
+                # Show main UI and activate circle
+                self.rest_screen.hide()
+                self._show_main_ui()
+                
+                idx = self.calibration_sequence[self.current_calibration_index]
+                self._activate_stimulus(idx)
+                
+                if self.input_mode == INPUT_MODE_EEG:
+                    self.eeg_handler.set_phase("focus")
+                else:
+                    circle_num = idx + 1
+                    self.calibration_handler.start_circle_focus(circle_num)
+        
+        # Phase 2: Focus
+        elif self.is_in_focus_phase:
+            remaining = self.focus_time - elapsed
+            self.timer.update_countdown(remaining, "Focus")
+            
+            # Dot animation - ALWAYS towards glowing stimulus during focus
             trigger = self.focus_time * DOT_MOVE_TRIGGER_RATIO
             if elapsed >= trigger:
                 index = self.calibration_sequence[self.current_calibration_index]
                 tx, ty = self.stimulus_circles[index].get_position()
-                remaining = max(0.001, self.focus_time - trigger)
-                progress = min(1.0, (elapsed - trigger) / remaining)
+                remaining_time = max(0.001, self.focus_time - trigger)
+                progress = min(1.0, (elapsed - trigger) / remaining_time)
                 self.center_circle.move_dots_toward(tx, ty, progress)
-
+            
             if elapsed >= self.focus_time:
-                self.is_in_glow_phase = False
-                self.is_in_gap_phase = True
+                # Transition to ending rest
+                self.is_in_focus_phase = False
+                self.is_in_ending_rest = True
                 self.calibration_start_time = now
+                
+                # Hide main UI
                 self._deactivate_all_stimuli()
                 self.center_circle.return_dots_home()
-
-                try: self.calibration_handler.end_circle_focus()
-                except: pass
-
-        elif self.is_in_gap_phase:
+                self._hide_main_ui()
+                self.rest_screen.show()
+                
+                if self.input_mode == INPUT_MODE_EEG:
+                    self.eeg_handler.set_phase("ending_rest")
+                else:
+                    try:
+                        self.calibration_handler.end_circle_focus()
+                    except:
+                        pass
+        
+        # Phase 3: Ending Rest
+        elif self.is_in_ending_rest:
+            remaining = self.gap_time - elapsed
+            self.timer.update_countdown(remaining, "Rest")
+            
             if elapsed >= self.gap_time:
+                # Save data and move to next circle
+                if self.input_mode == INPUT_MODE_EEG:
+                    self.eeg_handler.save_circle_data()
+                
                 self.current_calibration_index += 1
-
+                self.circles_completed_in_round += 1
+                
+                # Check if round complete (all 8 circles done)
+                if self.circles_completed_in_round >= 8:
+                    self.circles_completed_in_round = 0
+                    self.calibration_completed_rounds += 1
+                    
+                    if self.input_mode == INPUT_MODE_EEG:
+                        self.eeg_handler.start_calibration_index(self.calibration_completed_rounds)
+                    else:
+                        self.calibration_handler.end_session()
+                        self.calibration_handler.increment_session_number()
+                        self.total_calibrations_done += 1
+                        self.calibration_handler.generate_mapping_file(self.total_calibrations_done)
+                
+                # Check if all calibrations complete
                 if self.current_calibration_index >= len(self.calibration_sequence):
                     self.calibration_active = False
-                    self._deactivate_all_stimuli()
+                    self.rest_screen.hide()
+                    self._show_main_ui()
                     self.timer.hide()
-
-                    self.calibration_handler.end_session()
-                    self.calibration_handler.increment_session_number()
-                    self.total_calibrations_done += 1
-                    self.calibration_handler.generate_mapping_file(self.total_calibrations_done)
-
+                    
+                    if self.input_mode == INPUT_MODE_EEG:
+                        self.eeg_device.stop_stream()
+                    else:
+                        self.calibration_handler.end_session()
+                    
                     self._update_status("Calibration Complete", "success")
                     return
-
+                
+                # Start next circle
                 idx = self.calibration_sequence[self.current_calibration_index]
-                self.is_in_glow_phase = True
-                self.is_in_gap_phase = False
+                circle_num = idx + 1
+                
+                self.is_in_ending_rest = False
+                self.is_in_starting_rest = True
                 self.calibration_start_time = now
-                self._activate_stimulus(idx)
-                self.calibration_handler.start_circle_focus(idx + 1)
+                
+                if self.input_mode == INPUT_MODE_EEG:
+                    self.eeg_handler.start_circle_collection(circle_num)
+                    self.eeg_handler.set_phase("starting_rest")
+                
+                # Update status
+                self._update_status(
+                    f"Calibration: Round {self.calibration_completed_rounds}/{self.calibration_rounds}",
+                    "info"
+                )
 
-    # -------------------------------------------------------------
-    # Resize + Theme
-    # -------------------------------------------------------------
+    # ============================================================
+    # Resize and Theme
+    # ============================================================
     def resize(self, w, h):
         self.width = w
         self.height = h
@@ -302,7 +511,6 @@ class BCIController:
         min_dim = min(w, h - CONTROL_PANEL_HEIGHT)
         distance = int(min_dim * STIMULUS_DISTANCE_RATIO)
 
-        # *** YOUR ORIGINAL UI CODE RESTORED (correct sin/cos) ***
         for i, angle in enumerate(STIMULUS_ANGLES):
             rad = math.radians(angle)
             x = self.center_x + distance * math.cos(rad)
@@ -310,6 +518,7 @@ class BCIController:
             self.stimulus_circles[i].reposition(x, y)
 
         self.timer.reposition(h)
+        self.rest_screen.reposition(w, h)
 
     def update_theme(self):
         try:
@@ -321,10 +530,11 @@ class BCIController:
         for c in self.stimulus_circles:
             c.update_theme()
         self.timer.update_theme()
+        self.rest_screen.update_theme()
 
-    # -------------------------------------------------------------
-    # Status + Cleanup
-    # -------------------------------------------------------------
+    # ============================================================
+    # Status and Cleanup
+    # ============================================================
     def _update_status(self, msg, level="info"):
         if self.status_callback:
             self.status_callback(msg, level)
@@ -332,6 +542,10 @@ class BCIController:
     def cleanup(self):
         try:
             self.tobii.stop_tracking()
+            if self.eeg_device:
+                self.eeg_device.disconnect()
+            if self.eeg_handler:
+                self.eeg_handler.cleanup()
         except:
             pass
         print("Controller cleaned")

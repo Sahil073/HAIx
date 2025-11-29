@@ -10,77 +10,54 @@ from controller import BCIController
 
 
 class BCIApplication:
-    """
-    Main application class.
-    Creates UI, manages controller, and handles themes.
-    The username prompt is shown inside the same main window (single-window flow).
-    """
+    """Main application class with EEG support and improved theming."""
 
     def __init__(self):
-        # Create main window immediately
         self.root = tk.Tk()
         self.root.title("BCI Interface - Login")
-        # start with a smaller height to center the username overlay; will be resized later
         self.root.geometry(f"{600}x{300}")
         self.root.minsize(500, 300)
         self.root.configure(bg=get_color('bg'))
 
-        # Theme management
         self.current_theme_name = THEME_LIGHT
 
-        # Create a blocking "overlay" frame for username input
+        # Show username overlay
         overlay = self._create_username_overlay()
-
-        # Wait for overlay to be destroyed (only after user presses Continue or Exit)
         self.root.wait_window(overlay)
 
-        # If username was not set, close
         if not getattr(self, "username", None):
             self.root.destroy()
             return
 
-        # Proceed to build full UI
+        # Build full UI
         self.root.title(f"BCI Interface - {self.username}")
-        # Resize to desired main size
         self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + CONTROL_PANEL_HEIGHT}")
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
         self.root.configure(bg=get_color('bg'))
 
-        # Configure grid weights for responsive layout
         self.root.grid_rowconfigure(1, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
 
-        # Create UI containers
         self._create_control_panel()
         self._create_canvas()
 
-        # Create controller with username
         self.controller = BCIController(
             self.canvas,
             self.username,
             status_callback=self._update_status
         )
 
-        # Bind events
         self._bind_events()
-
-        # Start animation
         self.controller.start_animation()
         self._animate()
-
-        # Set initial phase
         self.controller.set_phase(PHASE_TESTING)
-
-        # Initial theme setup
         self._apply_theme(LIGHT_THEME)
 
-    # ==================== Username overlay ====================
+    # ==================== Username Overlay ====================
     def _create_username_overlay(self):
-        """Create a centered username prompt overlay inside main root (no separate Toplevel)."""
         overlay = tk.Frame(self.root, bg=get_color('control_bg'))
         overlay.place(relx=0.5, rely=0.5, anchor="center")
 
-        # Title
         title_label = tk.Label(
             overlay,
             text="Welcome to BCI Interface",
@@ -122,7 +99,6 @@ class BCIApplication:
         username_entry.pack(side="left", fill="x", expand=True)
         username_entry.focus()
 
-        # Buttons
         button_frame = tk.Frame(overlay, bg=get_color('control_bg'))
         button_frame.pack(pady=(6, 10))
 
@@ -154,7 +130,6 @@ class BCIApplication:
         )
         cancel_button.pack(side="left", padx=6)
 
-        # Bind Enter key
         username_entry.bind("<Return>", lambda e: self._submit_username(overlay))
 
         return overlay
@@ -163,7 +138,6 @@ class BCIApplication:
         username = self._username_var.get().strip()
         if username:
             if all(c.isalnum() or c == '_' for c in username):
-                # store and remove overlay
                 self.username = username
                 overlay.destroy()
             else:
@@ -180,13 +154,12 @@ class BCIApplication:
             )
 
     def _cancel_username(self, overlay):
-        # set username to None and destroy window
         self.username = None
         overlay.destroy()
 
     # ==================== UI Creation ====================
     def _create_control_panel(self):
-        """Create top control panel with all controls."""
+        """Create control panel with dynamic dropdowns for EEG."""
         panel = tk.Frame(
             self.root,
             bg=get_color('control_bg'),
@@ -195,10 +168,8 @@ class BCIApplication:
         panel.grid(row=0, column=0, sticky="ew")
         panel.grid_propagate(False)
 
-        # Configure ttk style
         self._configure_ttk_style()
 
-        # Container
         container = tk.Frame(panel, bg=get_color('control_bg'))
         container.pack(side="top", fill="x", padx=CONTROL_PADDING, pady=10)
 
@@ -233,7 +204,6 @@ class BCIApplication:
         )
         self.colorblind_btn.pack(side="left", padx=2)
 
-        # Small separator
         sep1 = tk.Frame(container, bg=get_color('text_secondary'), width=2)
         sep1.pack(side="left", fill="y", padx=10)
 
@@ -249,32 +219,61 @@ class BCIApplication:
             self._on_phase_change, width=12
         )
 
-        # Focus time
-        focus_values = [f"{t}s" for t in FOCUS_TIME_OPTIONS]
-        self.focus_time_var = self._create_dropdown(
-            container, "Focus:", f"{DEFAULT_FOCUS_TIME}s", focus_values,
-            self._on_focus_time_change, width=6
+        # Focus time (dynamic)
+        self.focus_time_label = tk.Label(
+            container,
+            text="Focus:",
+            bg=get_color('control_bg'),
+            fg=get_color('text_primary'),
+            font=LABEL_FONT
         )
+        self.focus_time_label.pack(side="left", padx=(5, 3))
 
-        # Gap time
-        gap_values = [f"{t}s" for t in GAP_TIME_OPTIONS]
-        self.gap_time_var = self._create_dropdown(
-            container, "Gap:", f"{DEFAULT_GAP_TIME}s", gap_values,
-            self._on_gap_time_change, width=6
+        self.focus_time_var = tk.StringVar(value=f"{DEFAULT_FOCUS_TIME}s")
+        self.focus_time_dropdown = ttk.Combobox(
+            container,
+            textvariable=self.focus_time_var,
+            values=[f"{t}s" for t in FOCUS_TIME_OPTIONS],
+            state="readonly",
+            width=6,
+            font=DROPDOWN_FONT
         )
+        self.focus_time_dropdown.pack(side="left", padx=(0, 10))
+        self.focus_time_dropdown.bind("<<ComboboxSelected>>", self._on_focus_time_change)
+
+        # Gap time (dynamic)
+        self.gap_time_label = tk.Label(
+            container,
+            text="Gap:",
+            bg=get_color('control_bg'),
+            fg=get_color('text_primary'),
+            font=LABEL_FONT
+        )
+        self.gap_time_label.pack(side="left", padx=(5, 3))
+
+        self.gap_time_var = tk.StringVar(value=f"{DEFAULT_GAP_TIME}s")
+        self.gap_time_dropdown = ttk.Combobox(
+            container,
+            textvariable=self.gap_time_var,
+            values=[f"{t}s" for t in GAP_TIME_OPTIONS],
+            state="readonly",
+            width=6,
+            font=DROPDOWN_FONT
+        )
+        self.gap_time_dropdown.pack(side="left", padx=(0, 10))
+        self.gap_time_dropdown.bind("<<ComboboxSelected>>", self._on_gap_time_change)
 
         # Calibration rounds
-        rounds_values = [str(r) for r in CALIBRATION_ROUNDS_OPTIONS]
         self.calibration_rounds_var = self._create_dropdown(
             container, "Rounds:", str(DEFAULT_CALIBRATION_ROUNDS),
-            rounds_values, self._on_calibration_rounds_change, width=6
+            [str(r) for r in CALIBRATION_ROUNDS_OPTIONS],
+            self._on_calibration_rounds_change, width=6
         )
 
-        # Separator
         sep2 = tk.Frame(container, bg=get_color('text_secondary'), width=2)
         sep2.pack(side="left", fill="y", padx=10)
 
-        # Start/Stop Calibration Button
+        # Start button
         self.start_button = tk.Button(
             container,
             text="▶ Start",
@@ -288,7 +287,7 @@ class BCIApplication:
             cursor="hand2"
         )
         self.start_button.pack(side="left", padx=(0, 15))
-        self.start_button.pack_forget()  # hidden initially
+        self.start_button.pack_forget()
 
         # Status label
         self.status_label = tk.Label(
@@ -302,7 +301,7 @@ class BCIApplication:
         self.status_label.pack(side="left", fill="x", expand=True)
 
     def _configure_ttk_style(self):
-        """Configure ttk combobox style."""
+        """Configure ttk combobox style with current theme."""
         style = ttk.Style()
         try:
             style.theme_use('clam')
@@ -325,8 +324,7 @@ class BCIApplication:
         )
 
     def _create_dropdown(self, parent, label_text, default_value, values, callback, width=10):
-        """Helper to create compact labeled dropdown."""
-        # Label
+        """Helper to create labeled dropdown."""
         label = tk.Label(
             parent,
             text=label_text,
@@ -336,7 +334,6 @@ class BCIApplication:
         )
         label.pack(side="left", padx=(5, 3))
 
-        # Dropdown
         var = tk.StringVar(value=default_value)
         dropdown = ttk.Combobox(
             parent,
@@ -352,7 +349,7 @@ class BCIApplication:
         return var
 
     def _create_canvas(self):
-        """Create main canvas for visualization."""
+        """Create main canvas."""
         self.canvas = tk.Canvas(
             self.root,
             bg=get_color('bg'),
@@ -362,20 +359,17 @@ class BCIApplication:
 
     # ==================== Event Handlers ====================
     def _bind_events(self):
-        """Bind window and input events."""
         self.canvas.bind("<Motion>", self._on_mouse_move)
         self.canvas.bind("<Configure>", self._on_canvas_resize)
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
 
     def _on_mouse_move(self, event):
-        """Handle mouse movement."""
         try:
             self.controller.on_mouse_move(event.x, event.y)
         except:
             pass
 
     def _on_canvas_resize(self, event):
-        """Handle canvas resize."""
         if event.widget == self.canvas:
             try:
                 self.controller.resize(event.width, event.height)
@@ -383,15 +377,44 @@ class BCIApplication:
                 pass
 
     def _on_input_mode_change(self, event):
-        """Handle input mode change."""
+        """Handle input mode change with dynamic dropdown updates."""
         mode = self.input_mode_var.get()
+        
+        # Update dropdown options based on input mode
+        if mode == INPUT_MODE_EEG:
+            # EEG-specific options
+            self.focus_time_dropdown['values'] = [f"{t}s" for t in EEG_FOCUS_TIME_OPTIONS]
+            self.focus_time_var.set(f"{EEG_DEFAULT_FOCUS_TIME}s")
+            self.gap_time_dropdown['values'] = [f"{t}s" for t in EEG_GAP_TIME_OPTIONS]
+            self.gap_time_var.set(f"{EEG_DEFAULT_GAP_TIME}s")
+            
+            # Update controller
+            try:
+                self.controller.set_focus_time(EEG_DEFAULT_FOCUS_TIME)
+                self.controller.set_gap_time(EEG_DEFAULT_GAP_TIME)
+            except:
+                pass
+        else:
+            # Mouse/Tobii options
+            self.focus_time_dropdown['values'] = [f"{t}s" for t in FOCUS_TIME_OPTIONS]
+            self.focus_time_var.set(f"{DEFAULT_FOCUS_TIME}s")
+            self.gap_time_dropdown['values'] = [f"{t}s" for t in GAP_TIME_OPTIONS]
+            self.gap_time_var.set(f"{DEFAULT_GAP_TIME}s")
+            
+            # Update controller
+            try:
+                self.controller.set_focus_time(DEFAULT_FOCUS_TIME)
+                self.controller.set_gap_time(DEFAULT_GAP_TIME)
+            except:
+                pass
+        
+        # Set input mode in controller
         try:
             self.controller.set_input_mode(mode)
         except:
             pass
 
     def _on_focus_time_change(self, event):
-        """Handle focus time change."""
         time_str = self.focus_time_var.get().replace('s', '')
         try:
             time_val = float(time_str)
@@ -400,7 +423,6 @@ class BCIApplication:
             pass
 
     def _on_gap_time_change(self, event):
-        """Handle gap time change."""
         time_str = self.gap_time_var.get().replace('s', '')
         try:
             time_val = float(time_str)
@@ -409,7 +431,6 @@ class BCIApplication:
             pass
 
     def _on_calibration_rounds_change(self, event):
-        """Handle calibration rounds change."""
         rounds_str = self.calibration_rounds_var.get()
         try:
             rounds_val = int(rounds_str)
@@ -418,21 +439,18 @@ class BCIApplication:
             pass
 
     def _on_phase_change(self, event):
-        """Handle phase change."""
         phase = self.phase_var.get()
         try:
             self.controller.set_phase(phase)
         except:
             pass
 
-        # Show/hide start button
         if phase == PHASE_CALIBRATION:
             self.start_button.pack(side="left", padx=(0, 15), before=self.status_label)
         else:
             self.start_button.pack_forget()
 
     def _on_start_calibration(self):
-        """Start/stop calibration."""
         try:
             if self.controller.calibration_active:
                 self.controller.stop_calibration()
@@ -444,7 +462,6 @@ class BCIApplication:
             pass
 
     def _on_closing(self):
-        """Handle window close."""
         try:
             if hasattr(self, 'controller'):
                 self.controller.cleanup()
@@ -452,9 +469,9 @@ class BCIApplication:
             pass
         self.root.destroy()
 
-    # ==================== Theme ====================
+    # ==================== Theme Management ====================
     def _switch_theme(self, theme_name):
-        """Switch UI theme."""
+        """Switch UI theme with full application recoloring."""
         self.current_theme_name = theme_name
 
         if theme_name == THEME_LIGHT:
@@ -470,32 +487,32 @@ class BCIApplication:
         self._update_theme_buttons()
 
     def _apply_theme(self, theme):
-        """Apply theme colors."""
+        """Apply theme colors to entire application."""
         global CURRENT_THEME
         CURRENT_THEME = theme
 
-        # Window + canvas
+        # Root window
         try:
             self.root.config(bg=theme['bg'])
             self.canvas.config(bg=theme['bg'])
         except:
             pass
 
-        # Update all widgets
+        # Update all widgets recursively
         for widget in self.root.winfo_children():
             self._update_widget_theme(widget, theme)
 
-        # Update ttk
+        # Update ttk styles
         self._configure_ttk_style()
 
-        # Controller visuals
+        # Update controller visuals
         try:
             self.controller.update_theme()
         except:
             pass
 
     def _update_widget_theme(self, widget, theme):
-        """Recursively update widget appearance."""
+        """Recursively update widget colors for theme."""
         widget_type = widget.winfo_class()
 
         try:
@@ -512,15 +529,17 @@ class BCIApplication:
                     widget.config(bg=theme['control_bg'], fg=theme['text_primary'])
 
             elif widget_type == 'Button':
-                # Only update non-theme buttons
+                # Only update non-action buttons
                 if widget == getattr(self, 'start_button', None):
-                    pass
+                    pass  # Keep green/red color
+                elif widget in [self.light_btn, self.dark_btn, self.colorblind_btn]:
+                    pass  # Keep theme button colors
                 else:
                     widget.config(bg=theme['control_bg'], fg=theme['text_primary'])
         except:
             pass
 
-        # Recurse
+        # Recurse to children
         try:
             for child in widget.winfo_children():
                 self._update_widget_theme(child, theme)
@@ -545,7 +564,7 @@ class BCIApplication:
 
     # ==================== Status ====================
     def _update_status(self, message, level="info"):
-        """Update status bar."""
+        """Update status bar with color coding."""
         colors = {
             "info": "#2196F3",
             "success": "#4CAF50",
@@ -580,9 +599,9 @@ class BCIApplication:
 
 # ==================== Entry Point ====================
 def main():
-    """Start application."""
+    """Application entry point."""
     print("=" * 50)
-    print("BCI Interface - Eye Tracking & Calibration System")
+    print("BCI Interface - Eye Tracking & EEG Calibration System")
     print("=" * 50)
     print("Starting application...")
 

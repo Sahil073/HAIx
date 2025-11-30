@@ -1,7 +1,8 @@
+# -*- coding: utf-8 -*-
 # ===============================================
 # FILE: main.py
-# BCI Interface Application - Main Entry Point
-# Fixed: Dark mode now applies to entire window
+# BCI Interface - Sleek Black & White Design
+# with Collapsible Dropdown Controls
 # ===============================================
 
 import tkinter as tk
@@ -10,18 +11,64 @@ from config import *
 from controller import BCIController
 
 
+class CollapsibleSection:
+    """Collapsible section with smooth animation."""
+    
+    def __init__(self, parent, title, bg_color, fg_color):
+        self.parent = parent
+        self.is_open = False
+        
+        # Main container
+        self.container = tk.Frame(parent, bg=bg_color)
+        
+        # Toggle button with arrow (using simple ASCII characters)
+        self.toggle_btn = tk.Button(
+            self.container,
+            text=f"> {title}",
+            command=self.toggle,
+            bg=bg_color,
+            fg=fg_color,
+            font=("Segoe UI", 9, "bold"),
+            relief="flat",
+            anchor="w",
+            cursor="hand2",
+            padx=10,
+            pady=5,
+            activebackground="#1A1A1A",
+            activeforeground=fg_color
+        )
+        self.toggle_btn.pack(fill="x")
+        
+        # Content frame (hidden by default)
+        self.content = tk.Frame(self.container, bg=bg_color)
+        self.title = title
+        self.bg_color = bg_color
+        self.fg_color = fg_color
+    
+    def toggle(self):
+        """Toggle section open/closed."""
+        if self.is_open:
+            self.content.pack_forget()
+            self.toggle_btn.config(text=f"> {self.title}")
+            self.is_open = False
+        else:
+            self.content.pack(fill="x", padx=10, pady=(0, 10))
+            self.toggle_btn.config(text=f"v {self.title}")
+            self.is_open = True
+    
+    def pack(self, **kwargs):
+        """Pack the container."""
+        self.container.pack(**kwargs)
+
+
 class BCIApplication:
-    """Main application class with proper dark mode support."""
+    """Main application with sleek black & white design."""
 
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("BCI Interface - Login")
-        self.root.geometry(f"{600}x{300}")
+        self.root.geometry(f"{600}x{350}")
         self.root.minsize(500, 300)
-
-        self.current_theme_name = THEME_LIGHT
-        
-        # Apply initial theme to root
         self.root.configure(bg=get_color('bg'))
 
         # Show username overlay
@@ -34,7 +81,7 @@ class BCIApplication:
 
         # Build full UI
         self.root.title(f"BCI Interface - {self.username}")
-        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + CONTROL_PANEL_HEIGHT}")
+        self.root.geometry(f"{WINDOW_WIDTH}x{WINDOW_HEIGHT + 100}")
         self.root.minsize(MIN_WIDTH, MIN_HEIGHT)
 
         self.root.grid_rowconfigure(1, weight=1)
@@ -46,91 +93,109 @@ class BCIApplication:
         self.controller = BCIController(
             self.canvas,
             self.username,
-            status_callback=self._update_status
+            status_callback=self._update_status,
+            completion_callback=self._on_calibration_complete
         )
+        
+        # Set hardware status callback
+        self.controller.set_hardware_status_callback(self._on_hardware_status_change)
 
         self._bind_events()
         self.controller.start_animation()
         self._animate()
         self.controller.set_phase(PHASE_TESTING)
-        self._apply_theme(LIGHT_THEME)
 
     # ==================== Username Overlay ====================
     def _create_username_overlay(self):
-        overlay = tk.Frame(self.root, bg=get_color('control_bg'))
+        overlay = tk.Frame(self.root, bg=get_color('control_bg'), relief="flat", bd=2)
         overlay.place(relx=0.5, rely=0.5, anchor="center")
 
+        # Add border effect
+        border_frame = tk.Frame(overlay, bg=get_color('text_primary'), bd=2)
+        border_frame.pack(fill="both", expand=True, padx=2, pady=2)
+        
+        content = tk.Frame(border_frame, bg=get_color('control_bg'))
+        content.pack(fill="both", expand=True, padx=15, pady=15)
+
         title_label = tk.Label(
-            overlay,
-            text="Welcome to BCI Interface",
-            font=("Segoe UI", 16, "bold"),
+            content,
+            text="BCI INTERFACE",
+            font=("Segoe UI", 20, "bold"),
             bg=get_color('control_bg'),
             fg=get_color('text_primary')
         )
-        title_label.pack(pady=(10, 6))
+        title_label.pack(pady=(10, 5))
 
         subtitle_label = tk.Label(
-            overlay,
-            text="Please enter your username to begin",
+            content,
+            text="Enter your username to begin",
             font=("Segoe UI", 10),
             bg=get_color('control_bg'),
             fg=get_color('text_secondary')
         )
-        subtitle_label.pack(pady=(0, 12))
+        subtitle_label.pack(pady=(0, 20))
 
-        entry_frame = tk.Frame(overlay, bg=get_color('control_bg'))
-        entry_frame.pack(padx=20, pady=(0, 10), fill="x")
+        entry_frame = tk.Frame(content, bg=get_color('control_bg'))
+        entry_frame.pack(padx=20, pady=(0, 20), fill="x")
 
         tk.Label(
             entry_frame,
             text="Username:",
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 10, "bold"),
             bg=get_color('control_bg'),
             fg=get_color('text_primary')
-        ).pack(side="left", padx=(0, 8))
+        ).pack(side="left", padx=(0, 10))
 
         self._username_var = tk.StringVar()
         username_entry = tk.Entry(
             entry_frame,
             textvariable=self._username_var,
-            font=("Segoe UI", 10),
+            font=("Segoe UI", 11),
             width=25,
             relief="solid",
-            borderwidth=1
+            borderwidth=2,
+            bg=get_color('dropdown_bg'),
+            fg=get_color('text_primary'),
+            insertbackground=get_color('text_primary')
         )
-        username_entry.pack(side="left", fill="x", expand=True)
+        username_entry.pack(side="left", fill="x", expand=True, ipady=5)
         username_entry.focus()
 
-        button_frame = tk.Frame(overlay, bg=get_color('control_bg'))
-        button_frame.pack(pady=(6, 10))
+        button_frame = tk.Frame(content, bg=get_color('control_bg'))
+        button_frame.pack(pady=(10, 10))
 
         ok_button = tk.Button(
             button_frame,
-            text="Continue",
+            text="CONTINUE",
             command=lambda: self._submit_username(overlay),
-            bg='#4CAF50',
-            fg='white',
+            bg=get_color('button_bg'),
+            fg=get_color('button_fg'),
             font=("Segoe UI", 10, "bold"),
             relief="flat",
-            padx=20,
-            pady=8,
-            cursor="hand2"
+            padx=25,
+            pady=10,
+            cursor="hand2",
+            activebackground=get_color('button_hover'),
+            activeforeground=get_color('button_fg')
         )
-        ok_button.pack(side="left", padx=6)
+        ok_button.pack(side="left", padx=5)
 
         cancel_button = tk.Button(
             button_frame,
-            text="Exit",
+            text="EXIT",
             command=lambda: self._cancel_username(overlay),
-            bg='#f44336',
-            fg='white',
+            bg=get_color('control_bg'),
+            fg=get_color('text_primary'),
             font=("Segoe UI", 10, "bold"),
-            relief="flat",
-            padx=20,
-            pady=8,
-            cursor="hand2"
+            relief="solid",
+            borderwidth=2,
+            padx=25,
+            pady=10,
+            cursor="hand2",
+            activebackground=get_color('dropdown_hover'),
+            activeforeground=get_color('text_primary')
         )
-        cancel_button.pack(side="left", padx=6)
+        cancel_button.pack(side="left", padx=5)
 
         username_entry.bind("<Return>", lambda e: self._submit_username(overlay))
 
@@ -161,164 +226,147 @@ class BCIApplication:
 
     # ==================== UI Creation ====================
     def _create_control_panel(self):
-        """Create control panel with dynamic dropdowns."""
+        """Create modern collapsible control panel."""
         self.panel = tk.Frame(
             self.root,
             bg=get_color('control_bg'),
-            height=CONTROL_PANEL_HEIGHT
+            height=100
         )
         self.panel.grid(row=0, column=0, sticky="ew")
         self.panel.grid_propagate(False)
 
         self._configure_ttk_style()
 
+        # Main container with border
         container = tk.Frame(self.panel, bg=get_color('control_bg'))
-        container.pack(side="top", fill="x", padx=CONTROL_PADDING, pady=10)
+        container.pack(side="top", fill="both", expand=True, padx=10, pady=10)
 
-        # Theme buttons
-        theme_frame = tk.Frame(container, bg=get_color('control_bg'))
-        theme_frame.pack(side="left", padx=(0, 20))
+        # Top row - Status, Hardware Toggle, and Start button
+        top_row = tk.Frame(container, bg=get_color('control_bg'))
+        top_row.pack(fill="x", pady=(0, 10))
 
-        self.light_btn = tk.Button(
-            theme_frame, text="☀",
-            command=lambda: self._switch_theme(THEME_LIGHT),
-            bg="#FFFFFF", fg="#2D3142",
-            font=("Segoe UI", 12), relief="flat",
-            width=3, height=1, cursor="hand2", borderwidth=2
-        )
-        self.light_btn.pack(side="left", padx=2)
-
-        self.dark_btn = tk.Button(
-            theme_frame, text="🌙",
-            command=lambda: self._switch_theme(THEME_DARK),
-            bg="#2D3748", fg="#E2E8F0",
-            font=("Segoe UI", 12), relief="flat",
-            width=3, height=1, cursor="hand2", borderwidth=2
-        )
-        self.dark_btn.pack(side="left", padx=2)
-
-        self.colorblind_btn = tk.Button(
-            theme_frame, text="👁",
-            command=lambda: self._switch_theme(THEME_COLORBLIND),
-            bg="#E0E0E0", fg="#1A1A1A",
-            font=("Segoe UI", 12), relief="flat",
-            width=3, height=1, cursor="hand2", borderwidth=2
-        )
-        self.colorblind_btn.pack(side="left", padx=2)
-
-        sep1 = tk.Frame(container, bg=get_color('text_secondary'), width=2)
-        sep1.pack(side="left", fill="y", padx=10)
-
-        # Input Mode
-        self.input_mode_var = self._create_dropdown(
-            container, "Input:", INPUT_MODE_MOUSE, INPUT_MODES,
-            self._on_input_mode_change, width=12
-        )
-
-        # Phase
-        self.phase_var = self._create_dropdown(
-            container, "Phase:", PHASE_TESTING, PHASES,
-            self._on_phase_change, width=12
-        )
-
-        # Focus time
-        self.focus_time_label = tk.Label(
-            container,
-            text="Focus:",
-            bg=get_color('control_bg'),
-            fg=get_color('text_primary'),
-            font=LABEL_FONT
-        )
-        self.focus_time_label.pack(side="left", padx=(5, 3))
-
-        self.focus_time_var = tk.StringVar(value=f"{DEFAULT_FOCUS_TIME}s")
-        self.focus_time_dropdown = ttk.Combobox(
-            container,
-            textvariable=self.focus_time_var,
-            values=[f"{t}s" for t in FOCUS_TIME_OPTIONS],
-            state="readonly",
-            width=6,
-            font=DROPDOWN_FONT
-        )
-        self.focus_time_dropdown.pack(side="left", padx=(0, 10))
-        self.focus_time_dropdown.bind("<<ComboboxSelected>>", self._on_focus_time_change)
-
-        # Gap time
-        self.gap_time_label = tk.Label(
-            container,
-            text="Gap:",
-            bg=get_color('control_bg'),
-            fg=get_color('text_primary'),
-            font=LABEL_FONT
-        )
-        self.gap_time_label.pack(side="left", padx=(5, 3))
-
-        self.gap_time_var = tk.StringVar(value=f"{DEFAULT_GAP_TIME}s")
-        self.gap_time_dropdown = ttk.Combobox(
-            container,
-            textvariable=self.gap_time_var,
-            values=[f"{t}s" for t in GAP_TIME_OPTIONS],
-            state="readonly",
-            width=6,
-            font=DROPDOWN_FONT
-        )
-        self.gap_time_dropdown.pack(side="left", padx=(0, 10))
-        self.gap_time_dropdown.bind("<<ComboboxSelected>>", self._on_gap_time_change)
-
-        # Calibration rounds
-        self.calibration_rounds_label = tk.Label(
-            container,
-            text="Rounds:",
-            bg=get_color('control_bg'),
-            fg=get_color('text_primary'),
-            font=LABEL_FONT
-        )
-        self.calibration_rounds_label.pack(side="left", padx=(5, 3))
-
-        self.calibration_rounds_var = tk.StringVar(value=str(DEFAULT_CALIBRATION_ROUNDS))
-        self.calibration_rounds_dropdown = ttk.Combobox(
-            container,
-            textvariable=self.calibration_rounds_var,
-            values=[str(r) for r in CALIBRATION_ROUNDS_OPTIONS],
-            state="readonly",
-            width=6,
-            font=DROPDOWN_FONT
-        )
-        self.calibration_rounds_dropdown.pack(side="left", padx=(0, 10))
-        self.calibration_rounds_dropdown.bind("<<ComboboxSelected>>", self._on_calibration_rounds_change)
-
-        sep2 = tk.Frame(container, bg=get_color('text_secondary'), width=2)
-        sep2.pack(side="left", fill="y", padx=10)
-
-        # Start button
-        self.start_button = tk.Button(
-            container,
-            text="▶ Start",
-            command=self._on_start_calibration,
-            bg="#4CAF50",
-            fg="white",
-            font=BUTTON_FONT,
-            relief="flat",
-            padx=15,
-            pady=5,
-            cursor="hand2"
-        )
-        self.start_button.pack(side="left", padx=(0, 15))
-        self.start_button.pack_forget()
-
-        # Status label
+        # Status label (left)
         self.status_label = tk.Label(
-            container,
-            text="Status: Ready",
+            top_row,
+            text="[*] Ready",
             bg=get_color('control_bg'),
             fg=get_color('text_primary'),
-            font=STATUS_FONT,
+            font=("Segoe UI", 11, "bold"),
             anchor="w"
         )
         self.status_label.pack(side="left", fill="x", expand=True)
 
+        # Hardware toggle button (hidden by default)
+        self.hardware_toggle_var = tk.BooleanVar(value=False)
+        self.hardware_toggle = tk.Checkbutton(
+            top_row,
+            text="Allow Without Hardware",
+            variable=self.hardware_toggle_var,
+            command=self._on_hardware_toggle,
+            bg=get_color('control_bg'),
+            fg=get_color('text_primary'),
+            selectcolor=get_color('dropdown_bg'),
+            activebackground=get_color('control_bg'),
+            activeforeground=get_color('text_primary'),
+            font=("Segoe UI", 9),
+            cursor="hand2"
+        )
+        # Hidden by default - will show when hardware is not detected
+        
+        # Start button (right)
+        self.start_button = tk.Button(
+            top_row,
+            text="[>] START CALIBRATION",
+            command=self._on_start_calibration,
+            bg=get_color('button_bg'),
+            fg=get_color('button_fg'),
+            font=("Segoe UI", 10, "bold"),
+            relief="flat",
+            padx=20,
+            pady=8,
+            cursor="hand2",
+            activebackground=get_color('button_hover'),
+            activeforeground=get_color('button_fg')
+        )
+        self.start_button.pack(side="right")
+        self.start_button.pack_forget()
+
+        # Separator
+        sep = tk.Frame(container, bg=get_color('text_primary'), height=1)
+        sep.pack(fill="x", pady=(0, 10))
+
+        # Bottom row - Collapsible sections
+        sections_row = tk.Frame(container, bg=get_color('control_bg'))
+        sections_row.pack(fill="x")
+
+        # Input Mode Section
+        self.input_section = CollapsibleSection(
+            sections_row, "Input Mode", 
+            get_color('control_bg'), get_color('text_primary')
+        )
+        self.input_section.pack(side="left", fill="both", expand=True, padx=5)
+        
+        self.input_mode_var = self._create_dropdown_in_section(
+            self.input_section.content, "Mode:", INPUT_MODE_MOUSE, INPUT_MODES,
+            self._on_input_mode_change
+        )
+
+        # Phase Section
+        self.phase_section = CollapsibleSection(
+            sections_row, "Phase", 
+            get_color('control_bg'), get_color('text_primary')
+        )
+        self.phase_section.pack(side="left", fill="both", expand=True, padx=5)
+        
+        self.phase_var = self._create_dropdown_in_section(
+            self.phase_section.content, "Phase:", PHASE_TESTING, PHASES,
+            self._on_phase_change
+        )
+
+        # Timing Section
+        self.timing_section = CollapsibleSection(
+            sections_row, "Timing", 
+            get_color('control_bg'), get_color('text_primary')
+        )
+        self.timing_section.pack(side="left", fill="both", expand=True, padx=5)
+        
+        timing_content = self.timing_section.content
+        
+        # Focus time
+        focus_frame = tk.Frame(timing_content, bg=get_color('control_bg'))
+        focus_frame.pack(fill="x", pady=2)
+        
+        self.focus_time_var = self._create_dropdown_in_section(
+            focus_frame, "Focus:", f"{DEFAULT_FOCUS_TIME}s",
+            [f"{t}s" for t in FOCUS_TIME_OPTIONS],
+            self._on_focus_time_change
+        )
+        
+        # Gap time
+        gap_frame = tk.Frame(timing_content, bg=get_color('control_bg'))
+        gap_frame.pack(fill="x", pady=2)
+        
+        self.gap_time_var = self._create_dropdown_in_section(
+            gap_frame, "Gap:", f"{DEFAULT_GAP_TIME}s",
+            [f"{t}s" for t in GAP_TIME_OPTIONS],
+            self._on_gap_time_change
+        )
+
+        # Calibration Section
+        self.calibration_section = CollapsibleSection(
+            sections_row, "Calibration", 
+            get_color('control_bg'), get_color('text_primary')
+        )
+        self.calibration_section.pack(side="left", fill="both", expand=True, padx=5)
+        
+        self.calibration_rounds_var = self._create_dropdown_in_section(
+            self.calibration_section.content, "Rounds:", str(DEFAULT_CALIBRATION_ROUNDS),
+            [str(r) for r in CALIBRATION_ROUNDS_OPTIONS],
+            self._on_calibration_rounds_change
+        )
+
     def _configure_ttk_style(self):
-        """Configure ttk combobox style with current theme."""
+        """Configure ttk combobox style."""
         style = ttk.Style()
         try:
             style.theme_use('clam')
@@ -340,32 +388,32 @@ class BCIApplication:
             selectforeground=[('readonly', get_color('text_primary'))]
         )
 
-    def _create_dropdown(self, parent, label_text, default_value, values, callback, width=10):
-        """Helper to create labeled dropdown - stores label reference."""
+    def _create_dropdown_in_section(self, parent, label_text, default_value, values, callback):
+        """Create labeled dropdown in collapsible section."""
+        frame = tk.Frame(parent, bg=get_color('control_bg'))
+        frame.pack(fill="x", pady=2)
+        
         label = tk.Label(
-            parent,
+            frame,
             text=label_text,
             bg=get_color('control_bg'),
-            fg=get_color('text_primary'),
-            font=LABEL_FONT
+            fg=get_color('text_secondary'),
+            font=("Segoe UI", 9),
+            anchor="w",
+            width=8
         )
-        label.pack(side="left", padx=(5, 3))
-        
-        # Store label reference for theme updates
-        if not hasattr(self, '_dropdown_labels'):
-            self._dropdown_labels = []
-        self._dropdown_labels.append(label)
+        label.pack(side="left", padx=(5, 5))
 
         var = tk.StringVar(value=default_value)
         dropdown = ttk.Combobox(
-            parent,
+            frame,
             textvariable=var,
             values=values,
             state="readonly",
-            width=width,
-            font=DROPDOWN_FONT
+            width=12,
+            font=("Segoe UI", 9)
         )
-        dropdown.pack(side="left", padx=(0, 10))
+        dropdown.pack(side="left", fill="x", expand=True)
         dropdown.bind("<<ComboboxSelected>>", callback)
 
         return var
@@ -383,7 +431,19 @@ class BCIApplication:
     def _bind_events(self):
         self.canvas.bind("<Motion>", self._on_mouse_move)
         self.canvas.bind("<Configure>", self._on_canvas_resize)
+        self.root.bind("<Escape>", self._on_escape_key)  # ESC key to stop calibration
         self.root.protocol("WM_DELETE_WINDOW", self._on_closing)
+
+    def _on_escape_key(self, event):
+        """Handle ESC key to stop calibration."""
+        try:
+            if self.controller.calibration_active:
+                self.controller.stop_calibration()
+                self.start_button.config(text="[>] START CALIBRATION")
+                self._show_control_panel()
+                self._update_status("Calibration stopped (ESC pressed)", "warning")
+        except:
+            pass
 
     def _on_mouse_move(self, event):
         try:
@@ -398,30 +458,34 @@ class BCIApplication:
             except:
                 pass
 
+    def _on_hardware_status_change(self, hardware_connected):
+        """Callback when hardware connection status changes."""
+        if hardware_connected:
+            # Hardware is connected - hide toggle button
+            self.hardware_toggle.pack_forget()
+            self.hardware_toggle_var.set(False)
+            self.controller.set_allow_without_hardware(False)
+        else:
+            # Hardware NOT connected - show toggle button
+            self.hardware_toggle.pack(side="right", padx=10)
+
+    def _on_hardware_toggle(self):
+        """Handle hardware toggle button."""
+        allow = self.hardware_toggle_var.get()
+        try:
+            self.controller.set_allow_without_hardware(allow)
+        except:
+            pass
+
     def _on_input_mode_change(self, event):
-        """Handle input mode change with dynamic dropdown updates."""
+        """Handle input mode change."""
         mode = self.input_mode_var.get()
         
+        # Update timing dropdowns based on mode
         if mode == INPUT_MODE_EEG:
-            self.focus_time_dropdown['values'] = [f"{t}s" for t in EEG_FOCUS_TIME_OPTIONS]
-            self.focus_time_var.set(f"{EEG_DEFAULT_FOCUS_TIME}s")
-            self.gap_time_dropdown['values'] = [f"{t}s" for t in EEG_GAP_TIME_OPTIONS]
-            self.gap_time_var.set(f"{EEG_DEFAULT_GAP_TIME}s")
-            
             try:
                 self.controller.set_focus_time(EEG_DEFAULT_FOCUS_TIME)
                 self.controller.set_gap_time(EEG_DEFAULT_GAP_TIME)
-            except:
-                pass
-        else:
-            self.focus_time_dropdown['values'] = [f"{t}s" for t in FOCUS_TIME_OPTIONS]
-            self.focus_time_var.set(f"{DEFAULT_FOCUS_TIME}s")
-            self.gap_time_dropdown['values'] = [f"{t}s" for t in GAP_TIME_OPTIONS]
-            self.gap_time_var.set(f"{DEFAULT_GAP_TIME}s")
-            
-            try:
-                self.controller.set_focus_time(DEFAULT_FOCUS_TIME)
-                self.controller.set_gap_time(DEFAULT_GAP_TIME)
             except:
                 pass
         
@@ -462,7 +526,7 @@ class BCIApplication:
             pass
 
         if phase == PHASE_CALIBRATION:
-            self.start_button.pack(side="left", padx=(0, 15), before=self.status_label)
+            self.start_button.pack(side="right")
         else:
             self.start_button.pack_forget()
 
@@ -470,12 +534,29 @@ class BCIApplication:
         try:
             if self.controller.calibration_active:
                 self.controller.stop_calibration()
-                self.start_button.config(text="▶ Start", bg="#4CAF50")
+                self.start_button.config(text="[>] START CALIBRATION")
+                self._show_control_panel()
             else:
                 if self.controller.start_calibration():
-                    self.start_button.config(text="■ Stop", bg="#f44336")
+                    self.start_button.config(text="[X] STOP CALIBRATION")
+                    self._hide_control_panel()
+                    self._update_status("Calibration running... Press ESC to stop", "info")
         except:
             pass
+
+    def _on_calibration_complete(self):
+        """Called when calibration completes automatically."""
+        self.start_button.config(text="[>] START CALIBRATION")
+        self._show_control_panel()
+        self._update_status("Calibration Complete!", "success")
+
+    def _hide_control_panel(self):
+        """Hide the entire control panel during calibration."""
+        self.panel.grid_remove()
+
+    def _show_control_panel(self):
+        """Show the control panel when calibration stops."""
+        self.panel.grid()
 
     def _on_closing(self):
         try:
@@ -485,111 +566,19 @@ class BCIApplication:
             pass
         self.root.destroy()
 
-    # ==================== Theme Management ====================
-    def _switch_theme(self, theme_name):
-        """Switch UI theme with full application recoloring."""
-        self.current_theme_name = theme_name
-
-        if theme_name == THEME_LIGHT:
-            theme = LIGHT_THEME
-        elif theme_name == THEME_DARK:
-            theme = DARK_THEME
-        elif theme_name == THEME_COLORBLIND:
-            theme = COLORBLIND_THEME
-        else:
-            theme = LIGHT_THEME
-
-        self._apply_theme(theme)
-        self._update_theme_buttons()
-
-    def _apply_theme(self, theme):
-        """Apply theme colors to entire application - FIXED."""
-        global CURRENT_THEME
-        CURRENT_THEME = theme
-
-        # Root window background
-        self.root.config(bg=theme['bg'])
-        
-        # Canvas background
-        self.canvas.config(bg=theme['bg'])
-        
-        # Control panel background
-        self.panel.config(bg=theme['control_bg'])
-
-        # Update all labels in control panel
-        if hasattr(self, '_dropdown_labels'):
-            for label in self._dropdown_labels:
-                try:
-                    label.config(bg=theme['control_bg'], fg=theme['text_primary'])
-                except:
-                    pass
-        
-        # Update specific labels
-        try:
-            self.focus_time_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
-            self.gap_time_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
-            self.calibration_rounds_label.config(bg=theme['control_bg'], fg=theme['text_primary'])
-            self.status_label.config(bg=theme['control_bg'])
-        except:
-            pass
-
-        # Update all frames recursively
-        self._update_frame_colors(self.panel, theme)
-
-        # Update ttk styles
-        self._configure_ttk_style()
-
-        # Update controller visuals
-        try:
-            self.controller.update_theme()
-        except:
-            pass
-
-    def _update_frame_colors(self, widget, theme):
-        """Recursively update frame and container colors."""
-        try:
-            widget_class = widget.winfo_class()
-            
-            if widget_class in ('Frame', 'Labelframe'):
-                widget.config(bg=theme['control_bg'])
-            
-            # Recurse to children
-            for child in widget.winfo_children():
-                self._update_frame_colors(child, theme)
-        except:
-            pass
-
-    def _update_theme_buttons(self):
-        """Highlight active theme button."""
-        try:
-            self.light_btn.config(relief="flat", borderwidth=1)
-            self.dark_btn.config(relief="flat", borderwidth=1)
-            self.colorblind_btn.config(relief="flat", borderwidth=1)
-        except:
-            pass
-
-        if self.current_theme_name == THEME_LIGHT:
-            self.light_btn.config(relief="solid", borderwidth=3)
-        elif self.current_theme_name == THEME_DARK:
-            self.dark_btn.config(relief="solid", borderwidth=3)
-        elif self.current_theme_name == THEME_COLORBLIND:
-            self.colorblind_btn.config(relief="solid", borderwidth=3)
-
     # ==================== Status ====================
     def _update_status(self, message, level="info"):
-        """Update status bar with color coding."""
-        colors = {
-            "info": "#2196F3",
-            "success": "#4CAF50",
-            "error": "#f44336",
-            "warning": "#FF9800"
+        """Update status with modern indicators."""
+        indicators = {
+            "info": "[*]",
+            "success": "[+]",
+            "error": "[!]",
+            "warning": "[-]"
         }
 
         try:
-            self.status_label.config(
-                text=f"Status: {message}",
-                fg=colors.get(level, get_color('text_primary'))
-            )
+            indicator = indicators.get(level, "[*]")
+            self.status_label.config(text=f"{indicator} {message}")
         except:
             pass
 
@@ -613,9 +602,10 @@ class BCIApplication:
 # ==================== Entry Point ====================
 def main():
     """Application entry point."""
-    print("=" * 50)
-    print("BCI Interface - Eye Tracking & EEG Calibration System")
-    print("=" * 50)
+    print("=" * 60)
+    print("         BCI INTERFACE - BLACK & WHITE EDITION")
+    print("    Eye Tracking & EEG Calibration System")
+    print("=" * 60)
     print("Starting application...")
 
     app = BCIApplication()

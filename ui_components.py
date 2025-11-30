@@ -1,6 +1,10 @@
+# -*- coding: utf-8 -*-
 # ===============================================
 # FILE: ui_components.py
 # UI Components for BCI Interface
+# Updated: Stimulus circles with black fill and white borders
+# Added instruction display for EEG mode
+# Fixed: Dots always remain inside circle
 # ===============================================
 
 import math
@@ -118,19 +122,23 @@ class CenterCircle:
         self._create_dots()
     
     def _create_dots(self):
+        """Create dots that always stay within circle bounds."""
         color = get_color('dot')
         positions = []
         rows = 7
         cols = 7
-        spacing = self.radius * 1.6 / rows
+        
+        # Reduced spacing to keep dots more centered
+        spacing = self.radius * 1.4 / rows
         
         for row in range(rows):
             for col in range(cols):
                 x_offset = (col - cols/2) * spacing
                 y_offset = (row - rows/2) * spacing
                 
-                x_offset += random.uniform(-spacing*0.2, spacing*0.2)
-                y_offset += random.uniform(-spacing*0.2, spacing*0.2)
+                # Reduced randomness
+                x_offset += random.uniform(-spacing*0.15, spacing*0.15)
+                y_offset += random.uniform(-spacing*0.15, spacing*0.15)
                 
                 x = self.center_x + x_offset
                 y = self.center_y + y_offset
@@ -139,7 +147,8 @@ class CenterCircle:
                 dy = y - self.center_y
                 dist = math.hypot(dx, dy)
                 
-                if dist < self.radius * 0.85:
+                # Tighter bounds - keep dots well within circle
+                if dist < self.radius * 0.75:
                     positions.append((x, y))
         
         random.shuffle(positions)
@@ -171,6 +180,16 @@ class CenterCircle:
             new_home_x = center_x + offset_x * scale
             new_home_y = center_y + offset_y * scale
             
+            # Ensure dot stays within bounds after resize
+            dx_center = new_home_x - center_x
+            dy_center = new_home_y - center_y
+            dist_from_center = math.hypot(dx_center, dy_center)
+            
+            if dist_from_center > radius * 0.75:
+                scale_factor = (radius * 0.75) / dist_from_center
+                new_home_x = center_x + dx_center * scale_factor
+                new_home_y = center_y + dy_center * scale_factor
+            
             dot.set_home(new_home_x, new_home_y)
             
             if abs(dot.target_x - dot.home_x) < 1:
@@ -188,18 +207,19 @@ class CenterCircle:
             dx /= dist
             dy /= dist
             
-            push_dist = self.radius * 0.6 * progress_ratio
+            push_dist = self.radius * 0.5 * progress_ratio
             
             for dot in self.dots:
                 target_x_pos = dot.home_x + dx * push_dist
                 target_y_pos = dot.home_y + dy * push_dist
                 
+                # Ensure target stays within circle
                 dx_center = target_x_pos - self.center_x
                 dy_center = target_y_pos - self.center_y
                 dist_from_center = math.hypot(dx_center, dy_center)
                 
-                if dist_from_center > self.radius * 0.95:
-                    scale = (self.radius * 0.95) / dist_from_center
+                if dist_from_center > self.radius * 0.90:
+                    scale = (self.radius * 0.90) / dist_from_center
                     target_x_pos = self.center_x + dx_center * scale
                     target_y_pos = self.center_y + dy_center * scale
                 
@@ -238,7 +258,7 @@ class CenterCircle:
 
 
 class StimulusCircle:
-    """Outer stimulus circle with smooth scaling animation."""
+    """Outer stimulus circle with black fill, white border, and white numbers."""
     
     def __init__(self, canvas, number, center_x, center_y, radius):
         self.canvas = canvas
@@ -252,18 +272,20 @@ class StimulusCircle:
         self.is_glowing = False
         self.is_hovered = False
         
+        # Black fill with white border
         self.circle = canvas.create_oval(
             center_x - radius, center_y - radius,
             center_x + radius, center_y + radius,
             fill=get_color('stimulus_normal'),
-            outline=get_color('stimulus_normal'),
+            outline=get_color('stimulus_border'),
             width=STIMULUS_NORMAL_WIDTH
         )
         
+        # White number inside
         self.label = canvas.create_text(
             center_x, center_y,
             text=str(number),
-            fill=get_color('text_secondary'),
+            fill=get_color('text_primary'),
             font=("Segoe UI", 14, "bold")
         )
     
@@ -315,10 +337,11 @@ class StimulusCircle:
         else:
             self.canvas.itemconfig(
                 self.circle,
-                outline=get_color('stimulus_normal'),
+                fill=get_color('stimulus_normal'),
+                outline=get_color('stimulus_border'),
                 width=STIMULUS_NORMAL_WIDTH
             )
-            self.canvas.itemconfig(self.label, fill=get_color('text_secondary'))
+            self.canvas.itemconfig(self.label, fill=get_color('text_primary'))
     
     def get_position(self):
         return self.center_x, self.center_y
@@ -334,9 +357,9 @@ class StimulusCircle:
             self.canvas.itemconfig(
                 self.circle,
                 fill=get_color('stimulus_normal'),
-                outline=get_color('stimulus_normal')
+                outline=get_color('stimulus_border')
             )
-            self.canvas.itemconfig(self.label, fill=get_color('text_secondary'))
+            self.canvas.itemconfig(self.label, fill=get_color('text_primary'))
     
     def hide(self):
         self.canvas.itemconfig(self.circle, state="hidden")
@@ -360,8 +383,8 @@ class Timer:
         self.bg = canvas.create_rectangle(
             0, 0, 0, 0,
             fill=get_color('timer_bg'),
-            outline=get_color('text_secondary'),
-            width=1,
+            outline=get_color('timer_border'),
+            width=2,
             state="hidden"
         )
         
@@ -444,13 +467,13 @@ class Timer:
     
     def update_theme(self):
         self.canvas.itemconfig(self.bg, fill=get_color('timer_bg'))
-        self.canvas.itemconfig(self.bg, outline=get_color('text_secondary'))
+        self.canvas.itemconfig(self.bg, outline=get_color('timer_border'))
         self.canvas.itemconfig(self.time_label, fill=get_color('timer_text'))
         self.canvas.itemconfig(self.desc_label, fill=get_color('text_secondary'))
 
 
 class RestScreen:
-    """Full-screen REST display during gap periods."""
+    """Full-screen REST display during gap periods with optional instruction text."""
     
     def __init__(self, canvas):
         self.canvas = canvas
@@ -474,6 +497,15 @@ class RestScreen:
             font=REST_SCREEN_FONT,
             state="hidden"
         )
+        
+        # Instruction text (for EEG mode)
+        self.instruction = canvas.create_text(
+            0, 0,
+            text="",
+            fill=get_color('rest_screen_text'),
+            font=REST_SCREEN_INSTRUCTION_FONT,
+            state="hidden"
+        )
     
     def reposition(self, width, height):
         """Update position and size based on canvas dimensions."""
@@ -492,22 +524,45 @@ class RestScreen:
             self.width, self.height
         )
         
-        # Centered text
+        # Centered REST text
         self.canvas.coords(
             self.text,
             self.width // 2,
-            self.height // 2
+            self.height // 2 - 50
+        )
+        
+        # Instruction text below REST
+        self.canvas.coords(
+            self.instruction,
+            self.width // 2,
+            self.height // 2 + 50
         )
     
     def show(self):
-        """Show rest screen."""
+        """Show rest screen without instruction."""
         self.visible = True
         self.canvas.itemconfig(self.bg, state="normal")
         self.canvas.itemconfig(self.text, state="normal")
+        self.canvas.itemconfig(self.instruction, state="hidden")
         
         # Bring to front
         self.canvas.tag_raise(self.bg)
         self.canvas.tag_raise(self.text)
+        self.canvas.tag_raise(self.instruction)
+        
+        self._update_position()
+    
+    def show_with_instruction(self, instruction_text):
+        """Show rest screen with instruction text (for EEG mode)."""
+        self.visible = True
+        self.canvas.itemconfig(self.bg, state="normal")
+        self.canvas.itemconfig(self.text, state="normal")
+        self.canvas.itemconfig(self.instruction, text=instruction_text, state="normal")
+        
+        # Bring to front
+        self.canvas.tag_raise(self.bg)
+        self.canvas.tag_raise(self.text)
+        self.canvas.tag_raise(self.instruction)
         
         self._update_position()
     
@@ -516,8 +571,10 @@ class RestScreen:
         self.visible = False
         self.canvas.itemconfig(self.bg, state="hidden")
         self.canvas.itemconfig(self.text, state="hidden")
+        self.canvas.itemconfig(self.instruction, state="hidden")
     
     def update_theme(self):
         """Update colors for theme change."""
         self.canvas.itemconfig(self.bg, fill=get_color('rest_screen_bg'))
         self.canvas.itemconfig(self.text, fill=get_color('rest_screen_text'))
+        self.canvas.itemconfig(self.instruction, fill=get_color('rest_screen_text'))

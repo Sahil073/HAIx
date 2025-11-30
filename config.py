@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 # ===============================================
 # FILE: config.py
 # Configuration file for BCI Interface
@@ -11,73 +12,36 @@ MIN_HEIGHT = 700
 
 # ==================== Theme System ====================
 
-# Light Mode (Default)
-LIGHT_THEME = {
-    'bg': '#E8EAF0',
-    'circle_center': '#B8C5A0',
-    'circle_border': '#7A8F6E',
-    'dot': '#E07A7A',
+# Black & White Theme
+BLACK_WHITE_THEME = {
+    'bg': "#000000",
+    'circle_center': "#000000",
+    'circle_border': "#FFFFFF",
+    'dot': "#FFFFFF",
     'dot_glow': '#FFFFFF',
-    'stimulus_normal': '#2D3142',
-    'stimulus_glow': "#EC0A0A",
-    'control_bg': '#F5F7FA',
-    'text_primary': '#2D3142',
-    'text_secondary': '#6B7280',
-    'dropdown_bg': '#FFFFFF',
-    'dropdown_hover': '#F0F4F8',
-    'timer_bg': '#FFFFFF',
-    'timer_text': '#2D3142',
-    'rest_screen_bg': '#F5F7FA',
-    'rest_screen_text': '#2D3142'
-}
-
-# Dark Mode
-DARK_THEME = {
-    'bg': '#1A1A2E',
-    'circle_center': '#2D3142',
-    'circle_border': '#4F5B66',
-    'dot': '#FF6B6B',
-    'dot_glow': '#FFFFFF',
-    'stimulus_normal': '#3E4554',
-    'stimulus_glow': '#FFA500',
-    'control_bg': '#0F1419',
-    'text_primary': '#E2E8F0',
-    'text_secondary': '#A0AEC0',
-    'dropdown_bg': '#2D3748',
-    'dropdown_hover': '#4A5568',
-    'timer_bg': '#2D3142',
-    'timer_text': '#E2E8F0',
-    'rest_screen_bg': '#0F1419',
-    'rest_screen_text': '#E2E8F0'
-}
-
-# Colorblind Mode (Deuteranopia-friendly)
-COLORBLIND_THEME = {
-    'bg': '#F0F0F0',
-    'circle_center': '#A0B0C0',
-    'circle_border': '#607080',
-    'dot': '#0066CC',  # Blue instead of red
-    'dot_glow': '#FFFFFF',
-    'stimulus_normal': '#2D3142',
-    'stimulus_glow': '#FF8800',  # Orange instead of yellow
-    'control_bg': '#E8E8E8',
-    'text_primary': '#1A1A1A',
-    'text_secondary': '#4A4A4A',
-    'dropdown_bg': '#FFFFFF',
-    'dropdown_hover': '#E0E0E0',
-    'timer_bg': '#FFFFFF',
-    'timer_text': '#1A1A1A',
-    'rest_screen_bg': '#E8E8E8',
-    'rest_screen_text': '#1A1A1A'
+    'stimulus_normal': '#000000',  # Black fill
+    'stimulus_border': '#FFFFFF',  # White border
+    'stimulus_glow': "#FF0000",
+    'control_bg': '#000000',
+    'text_primary': '#FFFFFF',
+    'text_secondary': '#CCCCCC',
+    'dropdown_bg': '#000000',
+    'dropdown_hover': '#1A1A1A',
+    'timer_bg': '#000000',
+    'timer_border': '#FFFFFF',
+    'timer_text': '#FFFFFF',
+    'rest_screen_bg': '#000000',
+    'rest_screen_text': '#FFFFFF',
+    'button_bg': '#FFFFFF',
+    'button_fg': '#000000',
+    'button_hover': '#CCCCCC'
 }
 
 # Current theme (will be set by application)
-CURRENT_THEME = LIGHT_THEME
+CURRENT_THEME = BLACK_WHITE_THEME
 
 # Theme names
-THEME_LIGHT = "Light Mode"
-THEME_DARK = "Dark Mode"
-THEME_COLORBLIND = "Colorblind Mode"
+THEME_BLACK_WHITE = "Black & White"
 
 # ==================== UI Colors (Dynamic) ====================
 def get_color(key):
@@ -85,14 +49,14 @@ def get_color(key):
     return CURRENT_THEME.get(key, '#FFFFFF')
 
 # ==================== Center Circle Configuration ====================
-CENTER_CIRCLE_RADIUS_RATIO = 0.15
+CENTER_CIRCLE_RADIUS_RATIO = 0.10
 DOT_COUNT = 50
 DOT_RADIUS = 3
 DOT_GLOW_RADIUS = 5
 
 # ==================== Stimulus Circle Configuration ====================
 STIMULUS_CIRCLE_COUNT = 8
-STIMULUS_CIRCLE_RADIUS = 30
+STIMULUS_CIRCLE_RADIUS = 60
 STIMULUS_GLOW_WIDTH = 4
 STIMULUS_NORMAL_WIDTH = 2
 STIMULUS_DISTANCE_RATIO = 0.45
@@ -150,6 +114,19 @@ DOT_MOVE_TRIGGER_RATIO = 0.83
 EEG_SAMPLING_RATE = 256  # Hz
 EEG_CHANNEL_COUNT = 32  # 32-channel EEG system
 
+# ==================== EEG Action Instructions ====================
+# Map each circle number (1-8) to a 3-word action instruction
+EEG_ACTION_INSTRUCTIONS = {
+    1: "THINK MOVE FORWARD",
+    2: "THINK MOVE BACKWARD",
+    3: "THINK TURN LEFT",
+    4: "THINK TURN RIGHT",
+    5: "THINK MOVE UP",
+    6: "THINK MOVE DOWN",
+    7: "THINK ACTION STOP",
+    8: "THINK ACTION START"
+}
+
 # ==================== Control Panel Configuration ====================
 CONTROL_PANEL_HEIGHT = 60
 CONTROL_PADDING = 15
@@ -170,6 +147,7 @@ TIMER_LABEL_FONT = ("Segoe UI", 8)
 # ==================== Rest Screen Configuration ====================
 REST_SCREEN_FONT = ("Segoe UI", 48, "bold")
 REST_SCREEN_TEXT = "REST"
+REST_SCREEN_INSTRUCTION_FONT = ("Segoe UI", 24, "bold")
 
 # ==================== Stimulus Circle Positions ====================
 STIMULUS_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]  # 8 positions (degrees)

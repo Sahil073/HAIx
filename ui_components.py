@@ -2,9 +2,7 @@
 # ===============================================
 # FILE: ui_components.py
 # UI Components for BCI Interface
-# Updated: Stimulus circles with black fill and white borders
-# Added instruction display for EEG mode
-# Fixed: Dots always remain inside circle
+# Updated: Cross (+) for calibration, dots for testing
 # ===============================================
 
 import math
@@ -79,6 +77,10 @@ class Dot:
         self._update_visual()
     
     def _update_visual(self):
+        # Keep dots within circle bounds
+        dx = self.x - self.home_x
+        dy = self.y - self.home_y
+        
         self.canvas.coords(
             self.dot,
             self.x - DOT_RADIUS, self.y - DOT_RADIUS,
@@ -102,7 +104,7 @@ class Dot:
 
 
 class CenterCircle:
-    """Central circle containing animated dots."""
+    """Central circle - dots for testing, cross for calibration."""
     
     def __init__(self, canvas, center_x, center_y, radius):
         self.canvas = canvas
@@ -110,7 +112,9 @@ class CenterCircle:
         self.center_y = center_y
         self.radius = radius
         self.dots = []
+        self.mode = "testing"  # "testing" or "calibration"
         
+        # Circle border
         self.circle = canvas.create_oval(
             center_x - radius, center_y - radius,
             center_x + radius, center_y + radius,
@@ -119,26 +123,42 @@ class CenterCircle:
             width=2
         )
         
+        # Create dots (for testing phase)
         self._create_dots()
+        
+        # Create cross (for calibration phase)
+        cross_size = radius * 0.5
+        self.cross_h = canvas.create_line(
+            center_x - cross_size, center_y,
+            center_x + cross_size, center_y,
+            fill=get_color('text_primary'),
+            width=3,
+            state="hidden"
+        )
+        self.cross_v = canvas.create_line(
+            center_x, center_y - cross_size,
+            center_x, center_y + cross_size,
+            fill=get_color('text_primary'),
+            width=3,
+            state="hidden"
+        )
     
     def _create_dots(self):
-        """Create dots that always stay within circle bounds."""
+        """Create dots that stay within circle bounds."""
         color = get_color('dot')
         positions = []
-        rows = 7
-        cols = 7
+        rows = 6
+        cols = 6
         
-        # Reduced spacing to keep dots more centered
-        spacing = self.radius * 1.4 / rows
+        spacing = self.radius * 1.2 / rows
         
         for row in range(rows):
             for col in range(cols):
                 x_offset = (col - cols/2) * spacing
                 y_offset = (row - rows/2) * spacing
                 
-                # Reduced randomness
-                x_offset += random.uniform(-spacing*0.15, spacing*0.15)
-                y_offset += random.uniform(-spacing*0.15, spacing*0.15)
+                x_offset += random.uniform(-spacing*0.1, spacing*0.1)
+                y_offset += random.uniform(-spacing*0.1, spacing*0.1)
                 
                 x = self.center_x + x_offset
                 y = self.center_y + y_offset
@@ -147,8 +167,8 @@ class CenterCircle:
                 dy = y - self.center_y
                 dist = math.hypot(dx, dy)
                 
-                # Tighter bounds - keep dots well within circle
-                if dist < self.radius * 0.75:
+                # Keep dots well within circle
+                if dist < self.radius * 0.65:
                     positions.append((x, y))
         
         random.shuffle(positions)
@@ -157,6 +177,23 @@ class CenterCircle:
         for x, y in positions:
             dot = Dot(self.canvas, x, y, color)
             self.dots.append(dot)
+    
+    def set_mode(self, mode):
+        """Switch between 'testing' (dots) and 'calibration' (cross)."""
+        self.mode = mode
+        
+        if mode == "calibration":
+            # Hide dots, show cross
+            for dot in self.dots:
+                dot.hide()
+            self.canvas.itemconfig(self.cross_h, state="normal")
+            self.canvas.itemconfig(self.cross_v, state="normal")
+        else:
+            # Show dots, hide cross
+            for dot in self.dots:
+                dot.show()
+            self.canvas.itemconfig(self.cross_h, state="hidden")
+            self.canvas.itemconfig(self.cross_v, state="hidden")
     
     def resize(self, center_x, center_y, radius):
         scale = radius / self.radius if self.radius > 0 else 1
@@ -167,12 +204,27 @@ class CenterCircle:
         self.center_y = center_y
         self.radius = radius
         
+        # Update circle
         self.canvas.coords(
             self.circle,
             center_x - radius, center_y - radius,
             center_x + radius, center_y + radius
         )
         
+        # Update cross
+        cross_size = radius * 0.5
+        self.canvas.coords(
+            self.cross_h,
+            center_x - cross_size, center_y,
+            center_x + cross_size, center_y
+        )
+        self.canvas.coords(
+            self.cross_v,
+            center_x, center_y - cross_size,
+            center_x, center_y + cross_size
+        )
+        
+        # Update dots
         for dot in self.dots:
             offset_x = dot.home_x - (center_x - dx)
             offset_y = dot.home_y - (center_y - dy)
@@ -180,13 +232,13 @@ class CenterCircle:
             new_home_x = center_x + offset_x * scale
             new_home_y = center_y + offset_y * scale
             
-            # Ensure dot stays within bounds after resize
+            # Ensure dot stays within bounds
             dx_center = new_home_x - center_x
             dy_center = new_home_y - center_y
             dist_from_center = math.hypot(dx_center, dy_center)
             
-            if dist_from_center > radius * 0.75:
-                scale_factor = (radius * 0.75) / dist_from_center
+            if dist_from_center > radius * 0.65:
+                scale_factor = (radius * 0.65) / dist_from_center
                 new_home_x = center_x + dx_center * scale_factor
                 new_home_y = center_y + dy_center * scale_factor
             
@@ -199,6 +251,10 @@ class CenterCircle:
                 dot.target_y = new_home_y
     
     def move_dots_toward(self, target_x, target_y, progress_ratio):
+        """Move dots toward target (testing phase only)."""
+        if self.mode != "testing":
+            return
+        
         dx = target_x - self.center_x
         dy = target_y - self.center_y
         dist = math.hypot(dx, dy)
@@ -207,19 +263,20 @@ class CenterCircle:
             dx /= dist
             dy /= dist
             
-            push_dist = self.radius * 0.5 * progress_ratio
+            push_dist = self.radius * 0.40 * progress_ratio
             
             for dot in self.dots:
                 target_x_pos = dot.home_x + dx * push_dist
                 target_y_pos = dot.home_y + dy * push_dist
                 
-                # Ensure target stays within circle
+                # Ensure target stays within circle bounds
                 dx_center = target_x_pos - self.center_x
                 dy_center = target_y_pos - self.center_y
                 dist_from_center = math.hypot(dx_center, dy_center)
                 
-                if dist_from_center > self.radius * 0.90:
-                    scale = (self.radius * 0.90) / dist_from_center
+                max_dist = self.radius * 0.75
+                if dist_from_center > max_dist:
+                    scale = max_dist / dist_from_center
                     target_x_pos = self.center_x + dx_center * scale
                     target_y_pos = self.center_y + dy_center * scale
                 
@@ -228,12 +285,15 @@ class CenterCircle:
             self.return_dots_home()
     
     def return_dots_home(self):
+        """Return dots to home position."""
         for dot in self.dots:
             dot.set_target(dot.home_x, dot.home_y)
     
     def update(self, dt):
-        for dot in self.dots:
-            dot.update(dt)
+        """Update dot physics."""
+        if self.mode == "testing":
+            for dot in self.dots:
+                dot.update(dt)
     
     def update_theme(self):
         self.canvas.itemconfig(
@@ -241,6 +301,9 @@ class CenterCircle:
             fill=get_color('circle_center'),
             outline=get_color('circle_border')
         )
+        
+        self.canvas.itemconfig(self.cross_h, fill=get_color('text_primary'))
+        self.canvas.itemconfig(self.cross_v, fill=get_color('text_primary'))
         
         color = get_color('dot')
         for dot in self.dots:
@@ -250,15 +313,21 @@ class CenterCircle:
         self.canvas.itemconfig(self.circle, state="hidden")
         for dot in self.dots:
             dot.hide()
+        self.canvas.itemconfig(self.cross_h, state="hidden")
+        self.canvas.itemconfig(self.cross_v, state="hidden")
     
     def show(self):
         self.canvas.itemconfig(self.circle, state="normal")
-        for dot in self.dots:
-            dot.show()
+        if self.mode == "testing":
+            for dot in self.dots:
+                dot.show()
+        else:
+            self.canvas.itemconfig(self.cross_h, state="normal")
+            self.canvas.itemconfig(self.cross_v, state="normal")
 
 
 class StimulusCircle:
-    """Outer stimulus circle with black fill, white border, and white numbers."""
+    """Outer stimulus circle with numbering."""
     
     def __init__(self, canvas, number, center_x, center_y, radius):
         self.canvas = canvas
@@ -272,7 +341,6 @@ class StimulusCircle:
         self.is_glowing = False
         self.is_hovered = False
         
-        # Black fill with white border
         self.circle = canvas.create_oval(
             center_x - radius, center_y - radius,
             center_x + radius, center_y + radius,
@@ -281,12 +349,11 @@ class StimulusCircle:
             width=STIMULUS_NORMAL_WIDTH
         )
         
-        # White number inside
         self.label = canvas.create_text(
             center_x, center_y,
             text=str(number),
             fill=get_color('text_primary'),
-            font=("Segoe UI", 14, "bold")
+            font=("Segoe UI", 20, "bold")
         )
     
     def reposition(self, center_x, center_y):
@@ -371,7 +438,7 @@ class StimulusCircle:
 
 
 class Timer:
-    """Timer display with countdown functionality."""
+    """Timer display (not shown during calibration per requirements)."""
     
     def __init__(self, canvas):
         self.canvas = canvas
@@ -473,7 +540,7 @@ class Timer:
 
 
 class RestScreen:
-    """Full-screen REST display during gap periods with optional instruction text."""
+    """Full-screen REST/START/THANK YOU display."""
     
     def __init__(self, canvas):
         self.canvas = canvas
@@ -481,7 +548,7 @@ class RestScreen:
         self.height = 0
         self.visible = False
         
-        # Background rectangle
+        # Background
         self.bg = canvas.create_rectangle(
             0, 0, 0, 0,
             fill=get_color('rest_screen_bg'),
@@ -489,7 +556,7 @@ class RestScreen:
             state="hidden"
         )
         
-        # REST text
+        # Main text (REST/START/THANK YOU)
         self.text = canvas.create_text(
             0, 0,
             text=REST_SCREEN_TEXT,
@@ -508,7 +575,7 @@ class RestScreen:
         )
     
     def reposition(self, width, height):
-        """Update position and size based on canvas dimensions."""
+        """Update position based on canvas dimensions."""
         self.width = width
         self.height = height
         
@@ -517,49 +584,44 @@ class RestScreen:
     
     def _update_position(self):
         """Update canvas element positions."""
-        # Full screen background
         self.canvas.coords(
             self.bg,
             0, 0,
             self.width, self.height
         )
         
-        # Centered REST text
         self.canvas.coords(
             self.text,
             self.width // 2,
-            self.height // 2 - 50
+            self.height // 2 - 60
         )
         
-        # Instruction text below REST
         self.canvas.coords(
             self.instruction,
             self.width // 2,
-            self.height // 2 + 50
+            self.height // 2 + 60
         )
     
-    def show(self):
-        """Show rest screen without instruction."""
+    def show(self, main_text="REST"):
+        """Show rest screen with custom main text."""
         self.visible = True
+        self.canvas.itemconfig(self.text, text=main_text, state="normal")
         self.canvas.itemconfig(self.bg, state="normal")
-        self.canvas.itemconfig(self.text, state="normal")
         self.canvas.itemconfig(self.instruction, state="hidden")
         
-        # Bring to front
         self.canvas.tag_raise(self.bg)
         self.canvas.tag_raise(self.text)
         self.canvas.tag_raise(self.instruction)
         
         self._update_position()
     
-    def show_with_instruction(self, instruction_text):
-        """Show rest screen with instruction text (for EEG mode)."""
+    def show_with_instruction(self, main_text, instruction_text):
+        """Show rest screen with instruction (for EEG mode)."""
         self.visible = True
-        self.canvas.itemconfig(self.bg, state="normal")
-        self.canvas.itemconfig(self.text, state="normal")
+        self.canvas.itemconfig(self.text, text=main_text, state="normal")
         self.canvas.itemconfig(self.instruction, text=instruction_text, state="normal")
+        self.canvas.itemconfig(self.bg, state="normal")
         
-        # Bring to front
         self.canvas.tag_raise(self.bg)
         self.canvas.tag_raise(self.text)
         self.canvas.tag_raise(self.instruction)

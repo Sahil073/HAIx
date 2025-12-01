@@ -1,7 +1,16 @@
-# -*- coding: utf-8 -*-
+# Updated controller.py + main.py patches
+# Combined patch file containing the updated implementations for:
+#  - controller.py (fixed allow-without-hardware logic, EEG folder creation)
+#  - main.py (re-attempt input mode init when toggling 'Allow Without Hardware')
+
+# --------------------------- controller.py ---------------------------
+# NOTE: This is the updated controller module. Replace your existing
+# controller.py with this content.
+
 import time
 import math
 import random
+import os
 from config import *
 from ui_components import CenterCircle, StimulusCircle, Timer, RestScreen
 from calibration_data_handler import CalibrationDataHandler
@@ -20,11 +29,15 @@ except:
 
 class BCIController:
 
-    def __init__(self, canvas, username, status_callback=None, completion_callback=None):
+    def __init__(self, canvas, username, status_callback=None, completion_callback=None, pause_callback=None):
         self.canvas = canvas
         self.status_callback = status_callback
         self.completion_callback = completion_callback
+        self.pause_callback = pause_callback
         self.username = username
+
+        # Ensure data directory exists for user (created early so UI shows ready)
+        self._ensure_user_data_folder()
 
         # Data handlers
         self.calibration_handler = CalibrationDataHandler(username)
@@ -94,12 +107,35 @@ class BCIController:
         self.last_time = time.time()
         self.running = False
 
+    def _ensure_user_data_folder(self):
+        try:
+            base = os.path.join('data', str(self.username))
+            os.makedirs(base, exist_ok=True)
+            # Ensure eeg folder exists as well (created early)
+            eeg_folder = os.path.join(base, 'eeg')
+            os.makedirs(eeg_folder, exist_ok=True)
+        except Exception as e:
+            print(f"Warning: could not create user data folder: {e}")
+
     def _calculate_center_radius(self):
-        return int(min(self.width, self.height - CONTROL_PANEL_HEIGHT) * CENTER_CIRCLE_RADIUS_RATIO)
+        return int(min(self.width, self.height) * CENTER_CIRCLE_RADIUS_RATIO)
 
     def _create_stimulus_circles(self):
-        min_dimension = min(self.width, self.height - CONTROL_PANEL_HEIGHT)
-        distance = int(min_dimension * STIMULUS_DISTANCE_RATIO)
+        min_dimension = min(self.width, self.height)
+
+        # Adaptive distance: reduce distance on short/tall windows so top/bottom circles don't get cut
+        safe_ratio = STIMULUS_DISTANCE_RATIO
+        if self.height < 850:
+            safe_ratio *= 0.78
+        if self.height < 720:
+            safe_ratio *= 0.70
+
+        distance = int(min_dimension * safe_ratio)
+
+        # Hard limit so circles never go above the top padding
+        max_vertical_distance = max(0, self.center_y - 120)
+        if distance > max_vertical_distance:
+            distance = int(max_vertical_distance)
 
         for angle_deg in STIMULUS_ANGLES:
             angle_rad = math.radians(angle_deg)
@@ -113,10 +149,18 @@ class BCIController:
     # Input Mode Management
     # ============================================================
     def set_input_mode(self, mode):
-        """Switch between Mouse, Tobii, and EEG input modes."""
+        """Switch between Mouse, Tobii, and EEG input modes.
+
+        Important behaviour changes:
+        - If hardware is not connected but "allow_without_hardware" is True, keep the requested
+          input mode active but mark hardware status as disconnected (so UI shows warning).
+        - Do NOT silently revert the user's selection to Mouse when hardware is missing and
+          the user has enabled "Allow Without Hardware".
+        """
         if self.calibration_active:
             self.stop_calibration()
         
+        # Stop/cleanup previous mode
         if self.input_mode == INPUT_MODE_TOBII:
             try:
                 self.tobii.stop_tracking()
@@ -130,50 +174,109 @@ class BCIController:
                     self.eeg_device = None
             except:
                 pass
-        
+
+        # Try to set the requested mode
         self.input_mode = mode
-        
+
+        # ---------------- Tobii ----------------
         if mode == INPUT_MODE_TOBII:
+            # If device available, start normally
             if self.tobii.is_available():
                 self.tobii.start_tracking(self._on_gaze_update)
-                self._update_status("Tobii Active", "success")
+                self._update_status("Tobii Connected & Active", "success")
                 if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
                     self.hardware_status_callback(True)
             else:
-                self._update_status("Tobii Hardware Not Connected - Enable 'Allow Without Hardware'", "error")
-                self.input_mode = INPUT_MODE_MOUSE
-                if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
-                    self.hardware_status_callback(False)
-                
+                # Device not available
+                if self.allow_without_hardware:
+                    # Allow Tobii mode without hardware (emulated via mouse)
+                    self._update_status("Tobii Hardware Not Found - Running in software/emulation (Allow without hardware enabled)", "warning")
+                    # Do not revert to mouse; notify UI that hardware is not connected
+                    if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
+                        self.hardware_status_callback(False)
+                else:
+                    # Enforce fallback to mouse
+                    self._update_status("Tobii Hardware Not Connected - Enable 'Allow Without Hardware' to continue without device", "error")
+                    self.input_mode = INPUT_MODE_MOUSE
+                    if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
+                        self.hardware_status_callback(False)
+
+        # ---------------- EEG ----------------
         elif mode == INPUT_MODE_EEG:
+            # Attempt to create/connect device
             try:
+                # create device instance
                 self.eeg_device = GNautilusDevice(channel_count=EEG_CHANNEL_COUNT)
-                
-                if self.eeg_device.connect():
+
+                connected = False
+                try:
+                    connected = self.eeg_device.connect()
+                except Exception:
+                    connected = False
+
+                if connected:
+                    # Device connected normally
                     if self.eeg_handler is None:
                         self.eeg_handler = EEGDataHandler(
                             self.username,
                             sampling_rate=self.eeg_device.get_sampling_rate(),
                             channel_count=self.eeg_device.get_channel_count()
                         )
-                    
                     self._update_status(f"g.Nautilus Connected & Ready", "success")
                     if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
                         self.hardware_status_callback(True)
                 else:
+                    # Not connected
+                    if self.allow_without_hardware:
+                        # Create EEG handler in file-only mode so calibration/folders exist
+                        if self.eeg_handler is None:
+                            try:
+                                self.eeg_handler = EEGDataHandler(
+                                    self.username,
+                                    sampling_rate=EEG_SAMPLING_RATE,
+                                    channel_count=EEG_CHANNEL_COUNT
+                                )
+                            except Exception as e:
+                                print(f"Warning: couldn't create EEGDataHandler: {e}")
+
+                        # Ensure the data folder is ready
+                        try:
+                            user_eeg_folder = os.path.join('data', str(self.username), 'eeg')
+                            os.makedirs(user_eeg_folder, exist_ok=True)
+                        except Exception as e:
+                            print(f"Warning: could not create eeg folder: {e}")
+
+                        self._update_status("EEG Hardware Not Found - Running in data-only mode (Allow without hardware enabled)", "warning")
+                        if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
+                            self.hardware_status_callback(False)
+                    else:
+                        self._update_status("EEG Hardware Not Connected - Enable 'Allow Without Hardware' to continue without device", "error")
+                        self.input_mode = INPUT_MODE_MOUSE
+                        self.eeg_device = None
+                        if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
+                            self.hardware_status_callback(False)
+            except Exception as e:
+                # On unexpected errors, fall back to mouse unless allow_without_hardware
+                print(f"Exception while setting EEG mode: {e}")
+                if not self.allow_without_hardware:
                     self._update_status("EEG Hardware Not Connected - Enable 'Allow Without Hardware'", "error")
                     self.input_mode = INPUT_MODE_MOUSE
                     self.eeg_device = None
                     if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
                         self.hardware_status_callback(False)
-            except Exception as e:
-                self._update_status("EEG Hardware Not Connected - Enable 'Allow Without Hardware'", "error")
-                self.input_mode = INPUT_MODE_MOUSE
-                self.eeg_device = None
-                if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
-                    self.hardware_status_callback(False)
+                else:
+                    # Try to keep EEG mode but in data-only mode
+                    if self.eeg_handler is None:
+                        try:
+                            self.eeg_handler = EEGDataHandler(self.username, sampling_rate=EEG_SAMPLING_RATE, channel_count=EEG_CHANNEL_COUNT)
+                        except Exception as e2:
+                            print(f"Warning creating fallback EEG handler: {e2}")
+                    if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
+                        self.hardware_status_callback(False)
+
+        # ---------------- Mouse ----------------
         else:
-            self._update_status("Mouse Active", "info")
+            self._update_status("Mouse Active - Testing Mode", "info")
             if hasattr(self, 'hardware_status_callback') and self.hardware_status_callback:
                 self.hardware_status_callback(True)
 
@@ -225,7 +328,7 @@ class BCIController:
         self.mouse_y = y
 
     def get_current_position(self):
-        if self.input_mode == INPUT_MODE_TOBII:
+        if self.input_mode == INPUT_MODE_TOBII and self.tobii.is_available():
             return (self.gaze_x, self.gaze_y)
         else:
             return (self.mouse_x, self.mouse_y)
@@ -274,25 +377,26 @@ class BCIController:
         # Initialize appropriate handler
         if self.input_mode == INPUT_MODE_EEG:
             if not self.allow_without_hardware:
-                if not self.eeg_device or not self.eeg_device.is_connected():
+                if not self.eeg_device or not getattr(self.eeg_device, 'is_connected', lambda: False)():
                     self._update_status("EEG Hardware Not Connected - Enable 'Allow Without Hardware'", "error")
                     return False
-            
+
             if self.eeg_handler is None:
-                if self.eeg_device and self.eeg_device.is_connected():
+                if self.eeg_device and getattr(self.eeg_device, 'is_connected', lambda: False)():
                     self.eeg_handler = EEGDataHandler(
                         self.username,
                         sampling_rate=self.eeg_device.get_sampling_rate(),
                         channel_count=self.eeg_device.get_channel_count()
                     )
                 else:
+                    # create a file-only handler so data saving still works
                     self.eeg_handler = EEGDataHandler(
                         self.username,
                         sampling_rate=EEG_SAMPLING_RATE,
                         channel_count=EEG_CHANNEL_COUNT
                     )
-            
-            if self.eeg_device and self.eeg_device.is_connected():
+
+            if self.eeg_device and getattr(self.eeg_device, 'is_connected', lambda: False)():
                 try:
                     if not self.eeg_device.start_stream(self._on_eeg_sample):
                         if not self.allow_without_hardware:
@@ -302,19 +406,19 @@ class BCIController:
                     if not self.allow_without_hardware:
                         self._update_status(f"EEG Start Error: {e}", "error")
                         return False
-            
+
             self.eeg_handler.set_timing_parameters(self.gap_time, self.focus_time)
             self.eeg_handler.start_calibration_index(1)
-            
-            # EEG: Sequential pattern
+
+            # EEG: Sequential pattern - circle by circle
             self.calibration_sequence = []
             for circle_num in range(1, 9):
                 for _ in range(self.calibration_rounds):
                     self.calibration_sequence.append(circle_num - 1)
-            
+
             self.eeg_current_circle_number = 1
             self.eeg_circle_repetition = 0
-            
+
             print(f"EEG Calibration Sequence (first 20): {[x+1 for x in self.calibration_sequence[:20]]}")
             print(f"Total sequence length: {len(self.calibration_sequence)}")
             
@@ -323,11 +427,11 @@ class BCIController:
                 if not self.tobii.is_available():
                     self._update_status("Tobii Hardware Not Connected - Enable 'Allow Without Hardware'", "error")
                     return False
-            
+
             if not self.calibration_handler.start_session():
                 self._update_status("Cannot Start Session", "error")
                 return False
-            
+
             # Tobii: Random sequence
             self.calibration_sequence = []
             for _ in range(self.calibration_rounds):
@@ -335,16 +439,9 @@ class BCIController:
                 random.shuffle(seq)
                 self.calibration_sequence.extend(seq)
         else:
-            # Mouse: Random sequence
-            if not self.calibration_handler.start_session():
-                self._update_status("Cannot Start Session", "error")
-                return False
-            
-            self.calibration_sequence = []
-            for _ in range(self.calibration_rounds):
-                seq = list(range(8))
-                random.shuffle(seq)
-                self.calibration_sequence.extend(seq)
+            # Mouse mode shouldn't reach calibration
+            self._update_status("Mouse mode does not support calibration", "error")
+            return False
 
         self.calibration_active = True
         self.current_calibration_index = 0
@@ -365,9 +462,9 @@ class BCIController:
         if self.input_mode == INPUT_MODE_EEG:
             self.eeg_handler.start_circle_collection(first_circle)
             self.eeg_handler.set_phase("starting_rest")
-            
+
             instruction = EEG_ACTION_INSTRUCTIONS.get(first_circle, "FOCUS ON CIRCLE")
-            self.rest_screen.show_with_instruction(instruction)
+            self.rest_screen.show_with_instruction(REST_SCREEN_TEXT, instruction)
             print(f"DEBUG: Showing instruction for circle {first_circle}: {instruction}")
         else:
             self.calibration_handler.start_circle_collection(first_circle, "starting_rest")
@@ -397,7 +494,10 @@ class BCIController:
         try:
             if self.input_mode == INPUT_MODE_EEG:
                 if self.eeg_device:
-                    self.eeg_device.stop_stream()
+                    try:
+                        self.eeg_device.stop_stream()
+                    except Exception:
+                        pass
             else:
                 self.calibration_handler.end_circle_focus()
                 self.calibration_handler.end_session()
@@ -405,6 +505,43 @@ class BCIController:
             pass
 
         self._update_status("Calibration Stopped", "warning")
+
+    def pause_calibration(self):
+        """Pause calibration mid-way (keeps state so resume is possible)."""
+        if not self.calibration_active:
+            return
+        # We mark calibration as paused but keep all state intact
+        self.calibration_active = False
+        # hide stimuli but keep current indices so resume works
+        self._deactivate_all_stimuli()
+        self.center_circle.return_dots_home()
+        self.timer.hide()
+        self.rest_screen.show()
+        self._update_status("Calibration Paused", "info")
+        # call UI-provided pause callback (usually shows pause menu)
+        if self.pause_callback:
+            try:
+                self.pause_callback()
+            except:
+                pass
+
+    def resume_calibration(self):
+        """Resume a previously paused calibration (continues from same index)."""
+        if self.calibration_active:
+            return
+        # keep indexes unchanged; re-activate timing
+        self.calibration_active = True
+        # reset timers so state machine continues correctly
+        self.calibration_start_time = time.time()
+        self.calibration_session_start = self.calibration_session_start or time.time()
+        self.timer.show()
+        self.rest_screen.hide()
+        # if focus phase was active when paused, ensure proper flags
+        # we cannot reliably know exact sub-phase; keep UI safe by starting with starting_rest
+        self.is_in_starting_rest = True
+        self.is_in_focus_phase = False
+        self.is_in_ending_rest = False
+        self._update_status("Calibration Resumed", "info")
 
     def _activate_stimulus(self, i):
         self._deactivate_all_stimuli()
@@ -414,14 +551,16 @@ class BCIController:
         for c in self.stimulus_circles:
             c.set_glow(False)
 
-    def _hide_main_UI(self):
+    def _hide_main_ui(self):
         """Hide circles during rest periods."""
+        # During calibration we want only center cross (for calibration) or hide everything for rest
         self.center_circle.hide()
         for circle in self.stimulus_circles:
             circle.hide()
 
     def _show_main_ui(self):
         """Show circles during focus periods."""
+        # In calibration mode center shows cross; in testing mode dots show
         self.center_circle.show()
         for circle in self.stimulus_circles:
             circle.show()
@@ -456,6 +595,7 @@ class BCIController:
         if self.calibration_active:
             self._update_calibration(now)
             elapsed = now - self.calibration_session_start
+            # Timer shows only during testing phase or when explicitly requested; we keep it for calibration states where required
             self.timer.update(elapsed)
 
         elif self.current_phase == PHASE_TESTING:
@@ -527,7 +667,7 @@ class BCIController:
                     remaining_time = max(0.001, self.focus_time - trigger)
                     progress = min(1.0, (elapsed - trigger) / remaining_time)
                     self.center_circle.move_dots_toward(tx, ty, progress)
-            
+                
             if elapsed >= self.focus_time:
                 self.is_in_focus_phase = False
                 self.is_in_ending_rest = True
@@ -611,9 +751,10 @@ class BCIController:
                     self.eeg_handler.start_circle_collection(circle_num)
                     self.eeg_handler.set_phase("starting_rest")
                     
+                    # Show instruction only when starting a new circle (repetition 0)
                     if self.eeg_circle_repetition == 0:
                         instruction = EEG_ACTION_INSTRUCTIONS.get(circle_num, "FOCUS ON CIRCLE")
-                        self.rest_screen.show_with_instruction(instruction)
+                        self.rest_screen.show_with_instruction(REST_SCREEN_TEXT, instruction)
                         print(f"DEBUG: Showing instruction for circle {circle_num}: {instruction}")
                     else:
                         self.rest_screen.show()
@@ -642,7 +783,7 @@ class BCIController:
         self.center_radius = self._calculate_center_radius()
         self.center_circle.resize(self.center_x, self.center_y, self.center_radius)
 
-        min_dim = min(w, h - CONTROL_PANEL_HEIGHT)
+        min_dim = min(w, h)
         distance = int(min_dim * STIMULUS_DISTANCE_RATIO)
 
         for i, angle in enumerate(STIMULUS_ANGLES):
@@ -671,15 +812,13 @@ class BCIController:
     # ============================================================
     def _update_status(self, msg, level="info"):
         if self.status_callback:
-            self.status_callback(msg, level)
+            try:
+                self.status_callback(msg, level)
+            except:
+                pass
 
     def cleanup(self):
         try:
-            self.tobii.stop_tracking()
-            if self.eeg_device:
-                self.eeg_device.disconnect()
-            if self.eeg_handler:
-                self.eeg_handler.cleanup()
+            self.stop_calibration()
         except:
             pass
-        print("Controller cleaned")

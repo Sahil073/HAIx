@@ -5,10 +5,10 @@
 # ===============================================
 
 # Window Configuration
-WINDOW_WIDTH = 1200
-WINDOW_HEIGHT = 800
-MIN_WIDTH = 900
-MIN_HEIGHT = 700
+WINDOW_WIDTH = 1400
+WINDOW_HEIGHT = 900
+MIN_WIDTH = 1000
+MIN_HEIGHT = 800
 
 # ==================== Theme System ====================
 
@@ -19,8 +19,8 @@ BLACK_WHITE_THEME = {
     'circle_border': "#FFFFFF",
     'dot': "#FFFFFF",
     'dot_glow': '#FFFFFF',
-    'stimulus_normal': '#000000',  # Black fill
-    'stimulus_border': '#FFFFFF',  # White border
+    'stimulus_normal': '#000000',
+    'stimulus_border': '#FFFFFF',
     'stimulus_glow': "#FF0000",
     'control_bg': '#000000',
     'text_primary': '#FFFFFF',
@@ -49,25 +49,25 @@ def get_color(key):
     return CURRENT_THEME.get(key, '#FFFFFF')
 
 # ==================== Center Circle Configuration ====================
-CENTER_CIRCLE_RADIUS_RATIO = 0.10
+CENTER_CIRCLE_RADIUS_RATIO = 0.08
 DOT_COUNT = 50
 DOT_RADIUS = 3
 DOT_GLOW_RADIUS = 5
 
 # ==================== Stimulus Circle Configuration ====================
 STIMULUS_CIRCLE_COUNT = 8
-STIMULUS_CIRCLE_RADIUS = 60
-STIMULUS_GLOW_WIDTH = 4
-STIMULUS_NORMAL_WIDTH = 2
-STIMULUS_DISTANCE_RATIO = 0.45
+STIMULUS_CIRCLE_RADIUS = 80
+STIMULUS_GLOW_WIDTH = 5
+STIMULUS_NORMAL_WIDTH = 3
+STIMULUS_DISTANCE_RATIO = 0.48
 
-STIMULUS_HOVER_THRESHOLD = 40
-STIMULUS_HOVER_RADIUS = 40
+STIMULUS_HOVER_THRESHOLD = 50
+STIMULUS_HOVER_RADIUS = 50
 STIMULUS_SCALE_SPEED = 8.0
 
 # ==================== Tobii Configuration ====================
-TOBII_FOCUS_THRESHOLD = 80  # Pixels - radius to consider "focused on circle"
-TOBII_FOCUS_DURATION = 1.5  # Seconds - how long user must focus before dots move
+TOBII_FOCUS_THRESHOLD = 80
+TOBII_FOCUS_DURATION = 1.5
 
 # ==================== Animation Configuration ====================
 FPS = 60
@@ -83,8 +83,11 @@ DOT_RETURN_DURATION = 0.5
 # ==================== Phase Configuration ====================
 PHASE_TESTING = "Testing Phase"
 PHASE_CALIBRATION = "Calibration Phase"
-PHASE_START = "Start Phase"
-PHASES = [PHASE_TESTING, PHASE_CALIBRATION, PHASE_START]
+
+# Phase lists for different input modes
+MOUSE_PHASES = [PHASE_TESTING]
+TOBII_PHASES = [PHASE_TESTING, PHASE_CALIBRATION]
+EEG_PHASES = [PHASE_CALIBRATION]
 
 # ==================== Input Modes ====================
 INPUT_MODE_MOUSE = "Mouse Cursor"
@@ -100,9 +103,9 @@ GAP_TIME_OPTIONS = [0.5, 1.0, 1.5, 2.0, 2.5, 3.0]
 DEFAULT_GAP_TIME = 2.0
 
 # EEG Configuration
-EEG_FOCUS_TIME_OPTIONS = [4.0, 8.0, 12.0, 16.0]  # Multiples of 4
+EEG_FOCUS_TIME_OPTIONS = [4.0, 8.0, 12.0, 16.0]
 EEG_DEFAULT_FOCUS_TIME = 4.0
-EEG_GAP_TIME_OPTIONS = [2.0, 4.0, 6.0]  # Multiples of 2
+EEG_GAP_TIME_OPTIONS = [2.0, 4.0, 6.0]
 EEG_DEFAULT_GAP_TIME = 2.0
 
 # ==================== Calibration Configuration ====================
@@ -111,11 +114,10 @@ DEFAULT_CALIBRATION_ROUNDS = 5
 DOT_MOVE_TRIGGER_RATIO = 0.83
 
 # ==================== EEG Configuration ====================
-EEG_SAMPLING_RATE = 256  # Hz
-EEG_CHANNEL_COUNT = 32  # 32-channel EEG system
+EEG_SAMPLING_RATE = 256
+EEG_CHANNEL_COUNT = 32
 
 # ==================== EEG Action Instructions ====================
-# Map each circle number (1-8) to a 3-word action instruction
 EEG_ACTION_INSTRUCTIONS = {
     1: "THINK MOVE FORWARD",
     2: "THINK MOVE BACKWARD",
@@ -147,7 +149,17 @@ TIMER_LABEL_FONT = ("Segoe UI", 8)
 # ==================== Rest Screen Configuration ====================
 REST_SCREEN_FONT = ("Segoe UI", 48, "bold")
 REST_SCREEN_TEXT = "REST"
-REST_SCREEN_INSTRUCTION_FONT = ("Segoe UI", 24, "bold")
+REST_SCREEN_INSTRUCTION_FONT = ("Segoe UI", 28, "bold")
 
 # ==================== Stimulus Circle Positions ====================
-STIMULUS_ANGLES = [0, 45, 90, 135, 180, 225, 270, 315]  # 8 positions (degrees)
+# Updated positions: Left side (1-4), Right side (5-8)
+STIMULUS_ANGLES = [
+    90,   # 1 - Left top
+    135,  # 2 - Left top-bottom
+    180,  # 3 - Left middle
+    225,  # 4 - Left bottom
+    270,  # 5 - Right bottom
+    315,  # 6 - Right bottom-top
+    0,    # 7 - Right middle
+    45    # 8 - Right top
+]
